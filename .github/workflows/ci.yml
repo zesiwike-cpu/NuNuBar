@@ -1,0 +1,119 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  swift-test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check shell syntax
+        run: /bin/bash -n script/*.sh firmware/air60-v2/*.sh
+      - name: Verify release metadata and firmware catalog
+        run: python3 script/verify_repository.py
+      - name: Test setup preflight
+        run: |
+          python3 -m unittest discover -s script/tests -v
+          python3 script/preflight.py --json --no-hardware
+      - name: Test firmware model and patch encoder
+        run: ./firmware/air60-v2/test.sh
+      - name: Run Swift tests
+        run: swift test
+
+  windows-python-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run Windows Python tests
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = "windows"
+          python -m unittest discover -s windows/tests -v
+      - name: Verify repository and setup preflight
+        shell: pwsh
+        run: |
+          python script/verify_repository.py
+          python -m unittest discover -s script/tests -v
+          python script/preflight.py --json --no-hardware
+      - name: Parse PowerShell scripts
+        shell: pwsh
+        run: |
+          $errors = @()
+          Get-ChildItem windows, script, .github/scripts -Filter *.ps1 -Recurse | ForEach-Object {
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              $_.FullName,
+              [ref]$null,
+              [ref]$errors
+            )
+          }
+          if ($errors.Count -gt 0) {
+            $errors | Format-List
+            throw "PowerShell syntax validation failed."
+          }
+
+  macos-ad-hoc-dmg:
+    needs: swift-test
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install packaging dependencies
+        run: brew install dfu-util libusb
+      - name: Configure bundled dependency paths
+        run: |
+          echo "DFU_UTIL_PATH=$(command -v dfu-util)" >> "$GITHUB_ENV"
+          echo "LIBUSB_PATH=$(brew --prefix libusb)/lib/libusb-1.0.0.dylib" >> "$GITHUB_ENV"
+      - name: Build ad-hoc signed DMG
+        env:
+          APP_VERSION: 0.0.${{ github.run_number }}
+          BUILD_VERSION: ${{ github.run_number }}
+          SIGN_IDENTITY: "-"
+        run: |
+          ./script/package_release.sh
+          source="dist/NuNuBar-$APP_VERSION-macOS-arm64.dmg"
+          target="dist/NuNuBar-ci-macOS-arm64-UNNOTARIZED.dmg"
+          mv "$source" "$target"
+          cat > dist/MACOS_NOTARIZATION_STATUS.txt <<'EOF'
+          NOT NOTARIZED
+          This CI artifact is ad-hoc signed for testing. It has not been submitted to Apple notarization.
+          EOF
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NuNuBar-macOS-ad-hoc-${{ github.sha }}
+          path: |
+            dist/NuNuBar-ci-macOS-arm64-UNNOTARIZED.dmg
+            dist/MACOS_NOTARIZATION_STATUS.txt
+          if-no-files-found: error
+
+  windows-exe-and-zip:
+    needs: windows-python-test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build single-file executable with PyInstaller
+        shell: pwsh
+        run: .\windows\build-release.ps1
+      - name: Stage executable, catalog, and four firmware files
+        shell: pwsh
+        run: .\.github\scripts\stage-windows-release.ps1 -Version ci
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NuNuBar-Windows-${{ github.sha }}
+          path: |
+            windows/release/github/NuNuBar-Windows-ci-x64.exe
+            windows/release/github/NuNuBar-Windows-ci-x64.zip
+          if-no-files-found: error

@@ -1,0 +1,439 @@
+diff --git a/keyboards/nuphy/air60_v2/ansi/agent_light_protocol.h b/keyboards/nuphy/air60_v2/ansi/agent_light_protocol.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..964a800c603623dc46305009794170880a1df287
+--- /dev/null
++++ b/keyboards/nuphy/air60_v2/ansi/agent_light_protocol.h
+@@ -0,0 +1,125 @@
++/*
++Copyright 2026 NuNuBar contributors
++
++This program is free software: you can redistribute it and/or modify
++it under the terms of the GNU General Public License as published by
++the Free Software Foundation, either version 2 of the License, or
++(at your option) any later version.
++
++This program is distributed in the hope that it will be useful,
++but WITHOUT ANY WARRANTY; without even the implied warranty of
++MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++GNU General Public License for more details.
++
++You should have received a copy of the GNU General Public License
++along with this program.  If not, see <http://www.gnu.org/licenses/>.
++*/
++
++#pragma once
++
++#include <stdbool.h>
++#include <stddef.h>
++#include <stdint.h>
++
++#define AGENT_LIGHT_USB_REPORT_SIZE 32
++#define AGENT_LIGHT_EFFECT_SOLID 0x00
++#define AGENT_LIGHT_EFFECT_BREATHE 0x01
++#define AGENT_LIGHT_EFFECT_BLINK 0x02
++#define AGENT_LIGHT_EFFECT_WAVE 0x03
++#define AGENT_LIGHT_EFFECT_FACTORY 0xFF
++
++typedef struct {
++    uint8_t status;
++    uint8_t red;
++    uint8_t green;
++    uint8_t blue;
++    uint8_t effect;
++} agent_light_command_t;
++
++static inline bool agent_light_status_is_valid(uint8_t status)
++{
++    return status == 0x00 || status == 0x01 || status == 0x04 || status == 0x05;
++}
++
++static inline void agent_light_default_color(uint8_t status, agent_light_command_t *command)
++{
++    command->red = 0;
++    command->green = 0;
++    command->blue = 0;
++
++    switch (status) {
++        case 0x01:
++            command->red = 255;
++            command->green = 80;
++            break;
++        case 0x04:
++            command->red = 255;
++            break;
++        case 0x05:
++            command->green = 255;
++            break;
++    }
++}
++
++static inline uint8_t agent_light_default_effect(uint8_t status)
++{
++    switch (status) {
++        case 0x01: return AGENT_LIGHT_EFFECT_WAVE;
++        case 0x04: return AGENT_LIGHT_EFFECT_BLINK;
++        case 0x05: return AGENT_LIGHT_EFFECT_SOLID;
++        default: return AGENT_LIGHT_EFFECT_FACTORY;
++    }
++}
++
++static inline bool agent_light_effect_is_valid(uint8_t effect)
++{
++    return effect == AGENT_LIGHT_EFFECT_SOLID
++        || effect == AGENT_LIGHT_EFFECT_BREATHE
++        || effect == AGENT_LIGHT_EFFECT_BLINK;
++}
++
++static inline bool agent_light_decode_usb_report(
++    const uint8_t *data,
++    uint8_t length,
++    agent_light_command_t *command
++)
++{
++    if (data == NULL || command == NULL || length != AGENT_LIGHT_USB_REPORT_SIZE) return false;
++    if (data[0] != 0x4E || data[1] != 0x42 || data[2] != 0x41 || data[3] != 0x52) return false;
++    if (data[5] != 0x01) return false;
++    if (!agent_light_status_is_valid(data[6])) return false;
++
++    uint8_t checksum = 0;
++    if (data[4] == 0x01) {
++        for (uint8_t i = 0; i < 7; i++) checksum ^= data[i];
++        if (checksum != data[7]) return false;
++        command->status = data[6];
++        agent_light_default_color(command->status, command);
++        command->effect = agent_light_default_effect(command->status);
++        return true;
++    }
++
++    if (data[4] == 0x02) {
++        for (uint8_t i = 0; i < 10; i++) checksum ^= data[i];
++        if (checksum != data[10]) return false;
++        command->status = data[6];
++        command->red = data[7];
++        command->green = data[8];
++        command->blue = data[9];
++        command->effect = agent_light_default_effect(command->status);
++        return true;
++    }
++
++    if (data[4] == 0x03) {
++        for (uint8_t i = 0; i < 11; i++) checksum ^= data[i];
++        if (checksum != data[11] || !agent_light_effect_is_valid(data[10])) return false;
++        command->status = data[6];
++        command->red = data[7];
++        command->green = data[8];
++        command->blue = data[9];
++        command->effect = data[10];
++        return true;
++    }
++
++    return false;
++}
+diff --git a/keyboards/nuphy/air60_v2/ansi/side.c b/keyboards/nuphy/air60_v2/ansi/side.c
+index 4055d8c7ce00ce218a781c42afbd974d3cae15d0..d2098603a31e11a60dc49a064fa7e73fce34aa0d 100644
+--- a/keyboards/nuphy/air60_v2/ansi/side.c
++++ b/keyboards/nuphy/air60_v2/ansi/side.c
+@@ -16,6 +16,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+ #include "ansi.h"
++#include "agent_light_protocol.h"
+ #include "side.h"
+
+ #define SIDE_WAVE           0
+@@ -31,6 +32,19 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ #define SIDE_LINE           5
+ #define SIDE_INDEX          64
+
++typedef struct {
++    uint8_t r;
++    uint8_t g;
++    uint8_t b;
++} agent_light_pixel_t;
++
++static const uint8_t agent_light_breathe_curve[32] = {
++    32, 33, 34, 37, 41, 46, 52, 59,
++    67, 75, 85, 94, 105, 116, 127, 138,
++    149, 160, 171, 182, 193, 202, 212, 220,
++    228, 235, 241, 246, 250, 253, 254, 255,
++};
++
+
+ const uint8_t side_speed_table[5][5] = {
+     [SIDE_WAVE]   = {14, 19, 25, 32, 40},
+@@ -68,6 +82,11 @@ uint8_t side_play_point     = 0;
+ uint8_t side_play_cnt       = 0;
+ uint32_t side_play_timer    = 0;
+ uint8_t r_temp, g_temp, b_temp;
++static uint8_t agent_light_usb_status = 0;
++static uint8_t agent_light_usb_red = 255;
++static uint8_t agent_light_usb_green = 80;
++static uint8_t agent_light_usb_blue = 0;
++static uint8_t agent_light_usb_effect = AGENT_LIGHT_EFFECT_FACTORY;
+
+ extern bool f_bat_hold;
+ extern DEV_INFO_STRUCT dev_info;
+@@ -75,6 +94,21 @@ extern user_config_t user_config;
+ extern uint8_t rf_blink_cnt;
+ extern uint16_t rf_link_show_time;
+
++#ifdef VIA_ENABLE
++bool via_command_kb(uint8_t *data, uint8_t length)
++{
++    agent_light_command_t command;
++    if (!agent_light_decode_usb_report(data, length, &command)) return false;
++
++    agent_light_usb_status = command.status;
++    agent_light_usb_red = command.red;
++    agent_light_usb_green = command.green;
++    agent_light_usb_blue = command.blue;
++    agent_light_usb_effect = command.effect;
++    return true;
++}
++#endif
++
+ /**
+  * @brief suspend_power_down_kb
+  *
+@@ -222,6 +256,107 @@ void set_right_rgb(uint8_t r, uint8_t g, uint8_t b)
+         rgb_matrix_set_color(SIDE_INDEX + SIDE_LINE + i, r, g, b);
+ }
+
++static uint8_t agent_light_scale_channel(uint8_t channel, uint8_t level)
++{
++    return (uint8_t)(((uint16_t)channel * level + 255) >> 8);
++}
++
++static void agent_light_fill(agent_light_pixel_t frame[SIDE_LINE], uint8_t r, uint8_t g, uint8_t b, uint8_t level)
++{
++    for (uint8_t i = 0; i < SIDE_LINE; i++) {
++        frame[i].r = agent_light_scale_channel(r, level);
++        frame[i].g = agent_light_scale_channel(g, level);
++        frame[i].b = agent_light_scale_channel(b, level);
++    }
++}
++
++static bool agent_light_render(
++    uint8_t effect,
++    uint8_t red,
++    uint8_t green,
++    uint8_t blue,
++    uint32_t now_ms,
++    agent_light_pixel_t frame[SIDE_LINE]
++)
++{
++    switch (effect) {
++        case AGENT_LIGHT_EFFECT_WAVE: {
++            uint8_t global_phase = (uint8_t)((now_ms >> 4) & 0x7F);
++            for (uint8_t i = 0; i < SIDE_LINE; i++) {
++                uint8_t pixel_phase = (uint8_t)((i * 26 + 128 - global_phase) & 0x7F);
++                uint8_t curve_index = pixel_phase < 64
++                    ? pixel_phase >> 1
++                    : (uint8_t)(127 - pixel_phase) >> 1;
++                uint8_t level = agent_light_breathe_curve[curve_index];
++                frame[i].r = agent_light_scale_channel(red, level);
++                frame[i].g = agent_light_scale_channel(green, level);
++                frame[i].b = agent_light_scale_channel(blue, level);
++            }
++            return true;
++        }
++        case AGENT_LIGHT_EFFECT_BLINK: {
++            uint8_t level = ((now_ms / 500) & 1) == 0 ? 255 : 0;
++            agent_light_fill(frame, red, green, blue, level);
++            return true;
++        }
++        case AGENT_LIGHT_EFFECT_BREATHE: {
++            uint8_t phase = (uint8_t)((now_ms >> 5) & 0x3F);
++            uint8_t curve_index = phase < 32 ? phase : (uint8_t)(63 - phase);
++            agent_light_fill(frame, red, green, blue, agent_light_breathe_curve[curve_index]);
++            return true;
++        }
++        case AGENT_LIGHT_EFFECT_SOLID:
++            agent_light_fill(frame, red, green, blue, 255);
++            return true;
++        default:
++            return false;
++    }
++}
++
++static void agent_light_show(void)
++{
++    static uint8_t previous_link_mode = LINK_USB;
++    agent_light_pixel_t frame[SIDE_LINE];
++    agent_light_command_t command;
++    uint8_t status;
++
++    if (dev_info.link_mode != previous_link_mode) {
++        if (previous_link_mode == LINK_USB) {
++            agent_light_usb_status = 0;
++            agent_light_usb_effect = AGENT_LIGHT_EFFECT_FACTORY;
++        }
++        previous_link_mode = dev_info.link_mode;
++    }
++
++    status = dev_info.link_mode == LINK_USB ? agent_light_usb_status : (dev_info.rf_led & 0x05);
++    command.status = status;
++
++    if (dev_info.link_mode == LINK_USB) {
++        command.red = agent_light_usb_red;
++        command.green = agent_light_usb_green;
++        command.blue = agent_light_usb_blue;
++        command.effect = agent_light_usb_effect;
++    } else {
++        agent_light_default_color(status, &command);
++        command.effect = agent_light_default_effect(status);
++    }
++    if (command.effect == AGENT_LIGHT_EFFECT_FACTORY) return;
++
++    if (!agent_light_render(
++        command.effect,
++        command.red,
++        command.green,
++        command.blue,
++        timer_read32(),
++        frame
++    )) return;
++
++    for (uint8_t i = 0; i < SIDE_LINE; i++) {
++        rgb_matrix_set_color(SIDE_INDEX + i, frame[i].r, frame[i].g, frame[i].b);
++        rgb_matrix_set_color(SIDE_INDEX + SIDE_LINE + i, frame[i].r, frame[i].g, frame[i].b);
++    }
++}
++
+ /**
+  * @brief  mac or win system indicate
+  */
+@@ -847,6 +982,7 @@ void m_side_led_show(void)
+         case SIDE_OFF:      side_off_mode_show();       break;
+     }
+
++    agent_light_show();
+     bat_led_show();
+     sleep_sw_led_show();
+     sys_sw_led_show();
+diff --git a/keyboards/nuphy/air60_v2/ansi/tests/agent_light_protocol_test.c b/keyboards/nuphy/air60_v2/ansi/tests/agent_light_protocol_test.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..d8f0bb0bb24f53b771635a2852be58921d97dfc3
+--- /dev/null
++++ b/keyboards/nuphy/air60_v2/ansi/tests/agent_light_protocol_test.c
+@@ -0,0 +1,120 @@
++/*
++Copyright 2026 NuNuBar contributors
++
++This program is free software: you can redistribute it and/or modify
++it under the terms of the GNU General Public License as published by
++the Free Software Foundation, either version 2 of the License, or
++(at your option) any later version.
++
++This program is distributed in the hope that it will be useful,
++but WITHOUT ANY WARRANTY; without even the implied warranty of
++MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++GNU General Public License for more details.
++
++You should have received a copy of the GNU General Public License
++along with this program.  If not, see <http://www.gnu.org/licenses/>.
++*/
++
++#include <assert.h>
++#include <stdint.h>
++#include <string.h>
++
++#include "../agent_light_protocol.h"
++
++static void checksum(uint8_t report[AGENT_LIGHT_USB_REPORT_SIZE], uint8_t end, uint8_t target)
++{
++    uint8_t value = 0;
++    for (uint8_t i = 0; i < end; i++) value ^= report[i];
++    report[target] = value;
++}
++
++int main(void)
++{
++    uint8_t report[AGENT_LIGHT_USB_REPORT_SIZE] = {
++        0x4E, 0x42, 0x41, 0x52, 0x03, 0x01, 0x01, 0x12, 0x34, 0x56,
++        AGENT_LIGHT_EFFECT_BREATHE,
++    };
++    agent_light_command_t command;
++    checksum(report, 11, 11);
++
++    assert(agent_light_decode_usb_report(report, sizeof(report), &command));
++    assert(command.status == 0x01);
++    assert(command.red == 0x12);
++    assert(command.green == 0x34);
++    assert(command.blue == 0x56);
++    assert(command.effect == AGENT_LIGHT_EFFECT_BREATHE);
++
++    report[11] ^= 0x01;
++    assert(!agent_light_decode_usb_report(report, sizeof(report), &command));
++
++    memset(report, 0, sizeof(report));
++    report[0] = 0x4E;
++    report[1] = 0x42;
++    report[2] = 0x41;
++    report[3] = 0x52;
++    report[4] = 0x03;
++    report[5] = 0x01;
++    report[6] = 0x00;
++    report[7] = 0x44;
++    report[8] = 0x55;
++    report[9] = 0x66;
++    report[10] = AGENT_LIGHT_EFFECT_SOLID;
++    checksum(report, 11, 11);
++
++    assert(agent_light_decode_usb_report(report, sizeof(report), &command));
++    assert(command.status == 0x00);
++    assert(command.red == 0x44);
++    assert(command.green == 0x55);
++    assert(command.blue == 0x66);
++    assert(command.effect == AGENT_LIGHT_EFFECT_SOLID);
++
++    report[10] = AGENT_LIGHT_EFFECT_BLINK;
++    checksum(report, 11, 11);
++    assert(agent_light_decode_usb_report(report, sizeof(report), &command));
++    assert(command.effect == AGENT_LIGHT_EFFECT_BLINK);
++
++    report[10] = 0x80;
++    checksum(report, 11, 11);
++    assert(!agent_light_decode_usb_report(report, sizeof(report), &command));
++
++    report[6] = 0x02;
++    report[10] = AGENT_LIGHT_EFFECT_SOLID;
++    checksum(report, 11, 11);
++    assert(!agent_light_decode_usb_report(report, sizeof(report), &command));
++    assert(!agent_light_decode_usb_report(report, AGENT_LIGHT_USB_REPORT_SIZE - 1, &command));
++
++    memset(report, 0, sizeof(report));
++    report[0] = 0x4E;
++    report[1] = 0x42;
++    report[2] = 0x41;
++    report[3] = 0x52;
++    report[4] = 0x02;
++    report[5] = 0x01;
++    report[6] = 0x01;
++    report[7] = 0x12;
++    report[8] = 0x34;
++    report[9] = 0x56;
++    checksum(report, 10, 10);
++
++    assert(agent_light_decode_usb_report(report, sizeof(report), &command));
++    assert(command.effect == AGENT_LIGHT_EFFECT_WAVE);
++
++    memset(report, 0, sizeof(report));
++    report[0] = 0x4E;
++    report[1] = 0x42;
++    report[2] = 0x41;
++    report[3] = 0x52;
++    report[4] = 0x01;
++    report[5] = 0x01;
++    report[6] = 0x05;
++    checksum(report, 7, 7);
++
++    assert(agent_light_decode_usb_report(report, sizeof(report), &command));
++    assert(command.status == 0x05);
++    assert(command.red == 0);
++    assert(command.green == 255);
++    assert(command.blue == 0);
++    assert(command.effect == AGENT_LIGHT_EFFECT_SOLID);
++
++    return 0;
++}

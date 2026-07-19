@@ -1,0 +1,14 @@
+.build/
+dist/
+.DS_Store
+.codex/
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+work/
+outputs/
+firmware/**/build/
+*.xcodeproj/
+windows/build/
+windows/dist/

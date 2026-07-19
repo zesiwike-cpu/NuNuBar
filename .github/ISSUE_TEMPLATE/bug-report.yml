@@ -1,0 +1,84 @@
+name: Bug report
+description: Report a reproducible NuNuBar app, Hook, or keyboard-light issue.
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not upload VIA backups, official recovery firmware, account data, or complete Codex configuration files.
+  - type: input
+    id: version
+    attributes:
+      label: NuNuBar version
+      placeholder: 0.11.0 (45)
+    validations:
+      required: true
+  - type: dropdown
+    id: host
+    attributes:
+      label: Host system
+      options:
+        - macOS 14+ Apple Silicon
+        - Windows 10/11 x64
+        - Other or unsupported
+    validations:
+      required: true
+  - type: dropdown
+    id: keyboard
+    attributes:
+      label: Exact keyboard model and layout
+      options:
+        - Air65 V3 ANSI
+        - Air60 V2 ANSI
+        - Air75 V2 ANSI
+        - Air96 V2 ANSI
+        - Halo75 V2 ANSI
+        - Other or unsupported
+    validations:
+      required: true
+  - type: input
+    id: identity
+    attributes:
+      label: USB VID:PID and HID usage
+      description: Paste only the non-sensitive device identity reported by NuNuBar or `describe`.
+      placeholder: 19F5:102B, usage 0001:0000
+    validations:
+      required: true
+  - type: dropdown
+    id: transport
+    attributes:
+      label: Connection used for status lighting
+      options:
+        - USB wired
+        - Bluetooth Low Energy
+        - 2.4G wireless
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      placeholder: List the smallest sequence that reproduces the issue.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant redacted logs
+      description: Remove usernames, paths, prompts, responses, tokens, and unrelated Hook configuration.
+      render: shell
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: I did not upload VIA backups, official firmware, secrets, or complete user configuration files.
+          required: true

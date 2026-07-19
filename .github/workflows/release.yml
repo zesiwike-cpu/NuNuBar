@@ -1,0 +1,138 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    runs-on: macos-15
+    env:
+      CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+      CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
+      NOTARY_APPLE_ID: ${{ secrets.APPLE_NOTARY_APPLE_ID }}
+      NOTARY_TEAM_ID: ${{ secrets.APPLE_NOTARY_TEAM_ID }}
+      NOTARY_PASSWORD: ${{ secrets.APPLE_NOTARY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Verify release metadata and firmware catalog
+        run: python3 script/verify_repository.py
+      - name: Run Swift tests
+        run: swift test
+      - name: Install packaging dependencies
+        run: brew install dfu-util libusb
+      - name: Configure bundled dependency paths
+        run: |
+          echo "DFU_UTIL_PATH=$(command -v dfu-util)" >> "$GITHUB_ENV"
+          echo "LIBUSB_PATH=$(brew --prefix libusb)/lib/libusb-1.0.0.dylib" >> "$GITHUB_ENV"
+      - name: Require complete Developer ID and notarization credentials
+        run: |
+          missing=0
+          for name in \
+            CERTIFICATE_P12 \
+            CERTIFICATE_PASSWORD \
+            DEVELOPER_ID_APPLICATION \
+            NOTARY_APPLE_ID \
+            NOTARY_TEAM_ID \
+            NOTARY_PASSWORD
+          do
+            if [ -z "${!name}" ]; then
+              echo "Missing required GitHub secret: $name" >&2
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "Public releases must be Developer ID signed and Apple notarized." >&2
+            exit 1
+          fi
+      - name: Configure Developer ID and notary credentials
+        run: |
+          keychain="$RUNNER_TEMP/nunubar-signing.keychain-db"
+          password="$(openssl rand -hex 24)"
+          certificate="$RUNNER_TEMP/nunubar-certificate.p12"
+          printf '%s' "$CERTIFICATE_P12" | base64 --decode > "$certificate"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$certificate" -k "$keychain" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain"
+          security default-keychain -s "$keychain"
+          security list-keychains -d user -s "$keychain"
+          xcrun notarytool store-credentials NuNuBar-CI \
+            --apple-id "$NOTARY_APPLE_ID" \
+            --team-id "$NOTARY_TEAM_ID" \
+            --password "$NOTARY_PASSWORD"
+          rm -f "$certificate"
+      - name: Package macOS release
+        env:
+          APP_VERSION: ${{ github.ref_name }}
+          BUILD_VERSION: ${{ github.run_number }}
+        run: |
+          version="${APP_VERSION#v}"
+          export APP_VERSION="$version"
+          NOTARY_PROFILE=NuNuBar-CI ./script/package_public_release.sh
+          cat > dist/MACOS_NOTARIZATION_STATUS.txt <<'EOF'
+          APPLE NOTARIZATION VERIFIED
+          This DMG was Developer ID signed, submitted to Apple, stapled, and assessed by Gatekeeper in this workflow.
+          EOF
+      - name: Remove temporary signing keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/nunubar-signing.keychain-db" || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-macos
+          path: |
+            dist/NuNuBar-*.dmg
+            dist/MACOS_NOTARIZATION_STATUS.txt
+          if-no-files-found: error
+
+  publish:
+    needs: [macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+      - name: Create checksums and release notes
+        run: |
+          cd release-assets
+          sha256sum NuNuBar-* > SHA256SUMS.txt
+          {
+            release_notes="../docs/releases/${GITHUB_REF_NAME}.md"
+            if [ -f "$release_notes" ]; then
+              cat "$release_notes"
+            else
+              echo "# NuNuBar ${GITHUB_REF_NAME}"
+            fi
+            echo
+            echo "## macOS build trust"
+            echo
+            cat MACOS_NOTARIZATION_STATUS.txt
+            echo
+            echo "Normal-user hardware verification currently covers Apple Silicon macOS with Air65 V3 or Air96 V2 ANSI only."
+            echo "Start with START_HERE.md and the read-only setupPlan before changing Hooks or firmware."
+          } > RELEASE_NOTES.md
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          assets=(release-assets/NuNuBar-* release-assets/SHA256SUMS.txt release-assets/MACOS_NOTARIZATION_STATUS.txt)
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber
+            gh release edit "$GITHUB_REF_NAME" --notes-file release-assets/RELEASE_NOTES.md
+          else
+            gh release create "$GITHUB_REF_NAME" "${assets[@]}" \
+              --verify-tag \
+              --title "NuNuBar $GITHUB_REF_NAME" \
+              --notes-file release-assets/RELEASE_NOTES.md
+          fi

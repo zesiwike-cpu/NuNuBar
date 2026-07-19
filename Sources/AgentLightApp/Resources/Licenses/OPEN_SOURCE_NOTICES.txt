@@ -1,0 +1,25 @@
+NuNuBar firmware setup components
+
+dfu-util 0.11
+License: GPL-2.0-or-later
+Homepage: https://dfu-util.sourceforge.net/
+Source: https://sourceforge.net/projects/dfu-util/files/dfu-util-0.11/
+The complete license text is included as dfu-util-GPL-2.0-or-later.txt.
+
+libusb 1.0.30
+License: LGPL-2.1-or-later
+Homepage: https://libusb.info/
+Source: https://github.com/libusb/libusb/releases/tag/v1.0.30
+The complete license text is included as libusb-LGPL-2.1-or-later.txt.
+
+NuNuBar Air60 V2, Air75 V2, Air96 V2, and Halo75 V2 firmware
+Based on QMK Firmware and NuPhy keyboard sources under GPL-2.0-or-later.
+QMK source: https://github.com/qmk/qmk_firmware
+NuPhy source: https://github.com/nuphy-src/qmk_firmware
+The matching source patch and build record are included in
+Licenses/FirmwareSource inside the app bundle.
+
+Air65 V3 Codex Light reference implementation
+License: MIT
+Copyright (c) 2026 Air65 V3 Codex Light contributors
+The complete license text is included as Air65V3-Codex-Light-MIT.txt.

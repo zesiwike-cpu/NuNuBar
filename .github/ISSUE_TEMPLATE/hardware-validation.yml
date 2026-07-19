@@ -1,0 +1,67 @@
+name: Hardware validation
+description: Submit evidence for one exact supported NuPhy model and layout.
+title: "[Hardware] "
+labels:
+  - hardware-validation
+body:
+  - type: markdown
+    attributes:
+      value: |
+        One report must cover one physical keyboard. Similar model names are not interchangeable. Never upload official recovery firmware or a VIA backup.
+  - type: dropdown
+    id: keyboard
+    attributes:
+      label: Exact model and layout printed on the keyboard
+      options:
+        - Air65 V3 ANSI
+        - Air60 V2 ANSI
+        - Air75 V2 ANSI
+        - Air96 V2 ANSI
+        - Halo75 V2 ANSI
+    validations:
+      required: true
+  - type: input
+    id: identity
+    attributes:
+      label: Application-mode USB identity
+      placeholder: VID:PID, product name, HID usage, report sizes
+    validations:
+      required: true
+  - type: input
+    id: host
+    attributes:
+      label: Host and NuNuBar version
+      placeholder: macOS 15.x arm64, NuNuBar 0.11.0 (45)
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Completed checks
+      options:
+        - label: Normal typing works over USB.
+          required: true
+        - label: Idle, working, waiting, and complete are visually distinct.
+          required: true
+        - label: Configured solid, breathe, and blink effects behave as expected.
+          required: true
+        - label: Both intended side-light or Halolight zones respond.
+          required: true
+        - label: USB unplug/replug restores the current state without restarting NuNuBar.
+          required: true
+        - label: Sleep/wake restores keyboard input and status lighting.
+          required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Results and non-sensitive evidence
+      description: Include exact observations and redacted logs or media. For V2 firmware, include only the NuNuBar image filename and published SHA-256.
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: I verified the exact model/layout and did not upload official firmware, VIA backups, secrets, or personal configuration.
+          required: true
