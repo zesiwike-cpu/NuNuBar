@@ -25,14 +25,19 @@ public enum NuPhyHIDConnectionTransport: String, Equatable, Sendable {
 enum NuPhyHIDDeviceProtocol: Equatable, Sendable {
     case bluetoothStatusLED
     case nbarRawHID
-    case air65V3Official
+    case airV3Official
 
     var transport: NuPhyHIDConnectionTransport {
         switch self {
         case .bluetoothStatusLED: .bluetoothLowEnergy
-        case .nbarRawHID, .air65V3Official: .usb
+        case .nbarRawHID, .airV3Official: .usb
         }
     }
+}
+
+private enum Air75V3PreflightStage: Equatable {
+    case appDefineSize
+    case modeName(offset: UInt16)
 }
 
 public enum NuPhyHIDError: LocalizedError, CustomStringConvertible, Equatable, Sendable {
@@ -58,7 +63,7 @@ public enum NuPhyHIDError: LocalizedError, CustomStringConvertible, Equatable, S
         case .managerOpenFailed: return "无法访问 macOS HID 设备管理器"
         case .deviceNotConnected: return "未找到已连接的 NuNuBar 兼容 NuPhy 键盘"
         case .reportFailed: return "无法向 NuPhy 键盘发送灯光状态"
-        case .protocolFailed: return "无法建立 Air65 V3 灯光控制连接"
+        case .protocolFailed: return "无法建立 Air V3 灯光控制连接"
         }
     }
 
@@ -88,23 +93,29 @@ public struct NuPhyHIDDiagnostics: Equatable, Sendable {
     public let air65ReportTimeouts: Int
     public let air65SessionRecoveries: Int
     public let air65CurrentMode: UInt8?
+    public let lastAir65Acknowledgement: [UInt8]?
 
     public init(
         acknowledgedAir65Reports: Int,
         air65ReportTimeouts: Int,
         air65SessionRecoveries: Int,
-        air65CurrentMode: UInt8?
+        air65CurrentMode: UInt8?,
+        lastAir65Acknowledgement: [UInt8]?
     ) {
         self.acknowledgedAir65Reports = acknowledgedAir65Reports
         self.air65ReportTimeouts = air65ReportTimeouts
         self.air65SessionRecoveries = air65SessionRecoveries
         self.air65CurrentMode = air65CurrentMode
+        self.lastAir65Acknowledgement = lastAir65Acknowledgement
     }
 }
 
 public final class NuPhyHIDTransport: @unchecked Sendable {
     static let nuphyVendorID = 0x19F5
-    static let air65V3ProductID = 0x102B
+    static let officialAirV3Models: [Int: String] = [
+        0x102B: "Air65 V3",
+        0x1028: "Air75 V3",
+    ]
     static let supportedUSBProductIDs: Set<Int> = [
         0x3255, // Air60 V2 ANSI
         0x3246, // Air75 V2 ANSI
@@ -132,16 +143,18 @@ public final class NuPhyHIDTransport: @unchecked Sendable {
                 kIOHIDDeviceUsageKey as String: rawHIDUsage,
             ]
         }
-        let air65V3Matcher: [String: Any] = [
-            kIOHIDTransportKey as String: NuPhyHIDConnectionTransport.usb.rawValue,
-            kIOHIDVendorIDKey as String: nuphyVendorID,
-            kIOHIDProductIDKey as String: air65V3ProductID,
-            kIOHIDDeviceUsagePageKey as String: air65V3UsagePage,
-            kIOHIDDeviceUsageKey as String: air65V3Usage,
-            kIOHIDMaxInputReportSizeKey as String: Air65V3ProtocolEncoder.reportSize,
-            kIOHIDMaxOutputReportSizeKey as String: Air65V3ProtocolEncoder.reportSize,
-        ]
-        return [bluetoothMatcher] + usbMatchers + [air65V3Matcher]
+        let airV3Matchers = officialAirV3Models.keys.sorted().map { productID in
+            [
+                kIOHIDTransportKey as String: NuPhyHIDConnectionTransport.usb.rawValue,
+                kIOHIDVendorIDKey as String: nuphyVendorID,
+                kIOHIDProductIDKey as String: productID,
+                kIOHIDDeviceUsagePageKey as String: air65V3UsagePage,
+                kIOHIDDeviceUsageKey as String: air65V3Usage,
+                kIOHIDMaxInputReportSizeKey as String: Air65V3ProtocolEncoder.reportSize,
+                kIOHIDMaxOutputReportSizeKey as String: Air65V3ProtocolEncoder.reportSize,
+            ]
+        }
+        return [bluetoothMatcher] + usbMatchers + airV3Matchers
     }
 
     public let connectionStates: AsyncStream<NuPhyHIDConnectionState>
@@ -168,12 +181,19 @@ public final class NuPhyHIDTransport: @unchecked Sendable {
     private var air65CurrentMode: UInt8?
     private var air65HandshakeContinuation: CheckedContinuation<Void, Error>?
     private var air65HandshakeTimeout: DispatchWorkItem?
+    private var air75PreflightStage: Air75V3PreflightStage?
+    private var air75PreflightTimeout: DispatchWorkItem?
     private var air65BaseTimeout: DispatchWorkItem?
     private var air65Transaction: Air65ReportTransaction?
     private var queuedAir65Transactions: [Air65ReportTransaction] = []
+    private var airV3FirmwareInfoContinuation: CheckedContinuation<[UInt8], Error>?
+    private var airV3FirmwareInfoTimeout: DispatchWorkItem?
+    private var airV3LightStateContinuation: CheckedContinuation<[UInt8], Error>?
+    private var airV3LightStateTimeout: DispatchWorkItem?
     private var air65BlinkGeneration: UUID?
     private var air65BlinkWorkItem: DispatchWorkItem?
     private var acknowledgedAir65Reports = 0
+    private var lastAir65Acknowledgement: [UInt8]?
     private var air65ReportTimeouts = 0
     private var air65SessionRecoveries = 0
 
@@ -215,6 +235,14 @@ public final class NuPhyHIDTransport: @unchecked Sendable {
     @discardableResult
     public static func requestAccess() -> Bool {
         IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
+    }
+
+    static func airV3HardwareBrightness(percent: UInt8, productID: Int) -> UInt8 {
+        let normalized = min(percent, AgentLightPalette.maximumBrightness)
+        if productID == 0x1028 {
+            return normalized
+        }
+        return UInt8((Int(normalized) * 24 + 50) / 100)
     }
 
     static func isCompatible(
@@ -274,14 +302,15 @@ public final class NuPhyHIDTransport: @unchecked Sendable {
         guard let productName, let maxOutputReportSize else { return nil }
 
         if transport == NuPhyHIDConnectionTransport.usb.rawValue,
-           productName.caseInsensitiveCompare("Air65 V3") == .orderedSame,
            vendorID == nuphyVendorID,
-           productID == air65V3ProductID,
+           let productID,
+           let expectedProductName = officialAirV3Models[productID],
+           productName.caseInsensitiveCompare(expectedProductName) == .orderedSame,
            usagePage == air65V3UsagePage,
            usage == air65V3Usage,
            maxInputReportSize == Air65V3ProtocolEncoder.reportSize,
            maxOutputReportSize == Air65V3ProtocolEncoder.reportSize {
-            return .air65V3Official
+            return .airV3Official
         }
 
         guard productName.range(
@@ -332,15 +361,15 @@ public final class NuPhyHIDTransport: @unchecked Sendable {
             let outputReport = switch deviceProtocol {
             case .bluetoothStatusLED: "1 (keyboard LED)"
             case .nbarRawHID: "0 (NuNuBar Raw HID)"
-            case .air65V3Official: "0 (Air65 V3 official control HID)"
+            case .airV3Official: "0 (Air V3 official control HID)"
             }
             return [
                 "Device: \(name)",
                 "Transport: \(connectionTransport.rawValue)",
                 "Output report: \(outputReport)",
                 "Max output report size: \(maxOutput.map(String.init) ?? "unknown") bytes",
-                deviceProtocol == .air65V3Official
-                    ? "Air65 V3 mode: \(air65CurrentMode.map(String.init) ?? (preparesAir65Session ? "negotiating" : "not queried"))"
+                deviceProtocol == .airV3Official
+                    ? "Air V3 mode: \(air65CurrentMode.map(String.init) ?? (preparesAir65Session ? "negotiating" : "not queried"))"
                     : nil,
             ].compactMap { $0 }.joined(separator: "\n")
         }
@@ -352,8 +381,115 @@ public final class NuPhyHIDTransport: @unchecked Sendable {
                 acknowledgedAir65Reports: acknowledgedAir65Reports,
                 air65ReportTimeouts: air65ReportTimeouts,
                 air65SessionRecoveries: air65SessionRecoveries,
-                air65CurrentMode: air65CurrentMode
+                air65CurrentMode: air65CurrentMode,
+                lastAir65Acknowledgement: lastAir65Acknowledgement
             )
+        }
+    }
+
+    public func readAirV3LightState() async throws -> [UInt8] {
+        try await AgentLightTransmissionLock().withAsyncLock {
+            try await negotiateAir65V3Session()
+            return try await withCheckedThrowingContinuation {
+                (continuation: CheckedContinuation<[UInt8], Error>) in
+                queue.async { [weak self] in
+                    guard let self,
+                          let device = self.currentDevice,
+                          self.currentDeviceProtocol == .airV3Official,
+                          let sessionKey = self.air65SessionKey,
+                          let currentMode = self.air65CurrentMode else {
+                        continuation.resume(throwing: NuPhyHIDError.deviceNotConnected)
+                        return
+                    }
+                    guard self.airV3LightStateContinuation == nil,
+                          self.air65Transaction == nil else {
+                        continuation.resume(throwing: NuPhyHIDError.protocolFailed(
+                            "Air V3 report channel is busy"
+                        ))
+                        return
+                    }
+
+                    self.airV3LightStateContinuation = continuation
+                    do {
+                        try self.setOutputReport(
+                            Air65V3ProtocolEncoder.lightStateRequest(
+                                sessionKey: sessionKey,
+                                currentMode: currentMode
+                            ),
+                            reportID: 0,
+                            on: device
+                        )
+                    } catch {
+                        self.airV3LightStateContinuation = nil
+                        continuation.resume(throwing: error)
+                        return
+                    }
+
+                    let timeout = DispatchWorkItem { [weak self] in
+                        guard let self,
+                              let continuation = self.airV3LightStateContinuation else { return }
+                        self.airV3LightStateContinuation = nil
+                        self.airV3LightStateTimeout = nil
+                        continuation.resume(throwing: NuPhyHIDError.protocolFailed(
+                            "Air V3 light-state query timed out"
+                        ))
+                    }
+                    self.airV3LightStateTimeout = timeout
+                    self.queue.asyncAfter(deadline: .now() + 0.75, execute: timeout)
+                }
+            }
+        }
+    }
+
+    public func readAirV3FirmwareInfo() async throws -> [UInt8] {
+        try await AgentLightTransmissionLock().withAsyncLock {
+            try await negotiateAir65V3Session()
+            return try await withCheckedThrowingContinuation {
+                (continuation: CheckedContinuation<[UInt8], Error>) in
+                queue.async { [weak self] in
+                    guard let self,
+                          let device = self.currentDevice,
+                          self.currentDeviceProtocol == .airV3Official,
+                          let sessionKey = self.air65SessionKey else {
+                        continuation.resume(throwing: NuPhyHIDError.deviceNotConnected)
+                        return
+                    }
+                    guard self.airV3FirmwareInfoContinuation == nil,
+                          self.air65Transaction == nil else {
+                        continuation.resume(throwing: NuPhyHIDError.protocolFailed(
+                            "Air V3 report channel is busy"
+                        ))
+                        return
+                    }
+
+                    self.airV3FirmwareInfoContinuation = continuation
+                    do {
+                        try self.setOutputReport(
+                            Air65V3ProtocolEncoder.firmwareInfoRequest(
+                                sessionKey: sessionKey
+                            ),
+                            reportID: 0,
+                            on: device
+                        )
+                    } catch {
+                        self.airV3FirmwareInfoContinuation = nil
+                        continuation.resume(throwing: error)
+                        return
+                    }
+
+                    let timeout = DispatchWorkItem { [weak self] in
+                        guard let self,
+                              let continuation = self.airV3FirmwareInfoContinuation else { return }
+                        self.airV3FirmwareInfoContinuation = nil
+                        self.airV3FirmwareInfoTimeout = nil
+                        continuation.resume(throwing: NuPhyHIDError.protocolFailed(
+                            "Air V3 firmware-info query timed out"
+                        ))
+                    }
+                    self.airV3FirmwareInfoTimeout = timeout
+                    self.queue.asyncAfter(deadline: .now() + 0.75, execute: timeout)
+                }
+            }
         }
     }
 
@@ -377,7 +513,7 @@ public final class NuPhyHIDTransport: @unchecked Sendable {
                 }
 
                 cancelAir65Blink()
-                if currentDeviceProtocol == .air65V3Official {
+                if currentDeviceProtocol == .airV3Official {
                     return true
                 }
 
@@ -387,8 +523,8 @@ public final class NuPhyHIDTransport: @unchecked Sendable {
                         try setBluetoothOutputReport(mask, on: currentDevice)
                     case .nbarRawHID:
                         try setUSBOutputReport(command, palette: palette, on: currentDevice)
-                    case .air65V3Official:
-                        preconditionFailure("Air65 V3 reports use the acknowledged transaction path")
+                    case .airV3Official:
+                        preconditionFailure("Air V3 reports use the acknowledged transaction path")
                     }
                     reconnectBackoff.reset()
                     return false
@@ -408,7 +544,7 @@ public final class NuPhyHIDTransport: @unchecked Sendable {
             try await performAir65V3Transaction(
                 command,
                 palette: palette,
-                brightness: 24,
+                brightnessPercent: palette.brightness(for: command),
                 effectOverride: shouldBlink ? .solid : nil
             )
             if shouldBlink {
@@ -569,7 +705,7 @@ public final class NuPhyHIDTransport: @unchecked Sendable {
             reconnectBackoff.reset()
         }
         let name = productName(of: candidate.device) ?? "NuPhy 键盘"
-        if candidate.deviceProtocol == .air65V3Official,
+        if candidate.deviceProtocol == .airV3Official,
            preparesAir65Session {
             publish(.connected(
                 productName: name,
@@ -613,8 +749,10 @@ public final class NuPhyHIDTransport: @unchecked Sendable {
         productName: String?,
         transport: NuPhyHIDConnectionTransport
     ) {
-        if currentDeviceProtocol == .air65V3Official
-            || productName?.caseInsensitiveCompare("Air65 V3") == .orderedSame {
+        if currentDeviceProtocol == .airV3Official
+            || Self.officialAirV3Models.values.contains(where: {
+                productName?.caseInsensitiveCompare($0) == .orderedSame
+            }) {
             air65SessionRecoveries += 1
         }
         let device = RecoveryDevice(
@@ -765,7 +903,7 @@ public final class NuPhyHIDTransport: @unchecked Sendable {
     private func performAir65V3Transaction(
         _ command: AgentLightCommand,
         palette: AgentLightPalette,
-        brightness: UInt8,
+        brightnessPercent: UInt8,
         effectOverride: AgentLightEffect?
     ) async throws {
         try await withCheckedThrowingContinuation {
@@ -778,7 +916,7 @@ public final class NuPhyHIDTransport: @unchecked Sendable {
                 self.enqueueAir65V3Transaction(
                     command,
                     palette: palette,
-                    brightness: brightness,
+                    brightnessPercent: brightnessPercent,
                     effectOverride: effectOverride
                 ) { result in
                     continuation.resume(with: result.mapError { $0 as Error })
@@ -790,18 +928,24 @@ public final class NuPhyHIDTransport: @unchecked Sendable {
     private func enqueueAir65V3Transaction(
         _ command: AgentLightCommand,
         palette: AgentLightPalette,
-        brightness: UInt8,
+        brightnessPercent: UInt8,
         effectOverride: AgentLightEffect?,
         completion: @escaping @Sendable (Result<Void, NuPhyHIDError>) -> Void
     ) {
         guard let air65SessionKey,
               let air65CurrentMode,
-              currentDeviceProtocol == .air65V3Official,
-              currentDevice != nil else {
-            completion(.failure(.protocolFailed("Air65 V3 session is not ready")))
+              currentDeviceProtocol == .airV3Official,
+              let currentDevice else {
+            completion(.failure(.protocolFailed("Air V3 session is not ready")))
             return
         }
 
+        let productID = integerProperty(kIOHIDProductIDKey, of: currentDevice) ?? 0
+        let isAir75V3 = productID == 0x1028
+        let effectiveBrightness = Self.airV3HardwareBrightness(
+            percent: brightnessPercent,
+            productID: productID
+        )
         let reports: [[UInt8]]
         do {
             reports = try Air65V3ProtocolEncoder.statusReports(
@@ -809,8 +953,9 @@ public final class NuPhyHIDTransport: @unchecked Sendable {
                 palette: palette,
                 sessionKey: air65SessionKey,
                 currentMode: air65CurrentMode,
-                brightness: brightness,
-                effectOverride: effectOverride
+                brightness: effectiveBrightness,
+                effectOverride: effectOverride,
+                sideLightModes: isAir75V3 ? .air75V3 : .air65V3
             )
         } catch {
             completion(.failure(.protocolFailed(String(describing: error))))
@@ -833,9 +978,9 @@ public final class NuPhyHIDTransport: @unchecked Sendable {
         guard let transaction = air65Transaction,
               transaction.reportIndex < transaction.reports.count,
               let currentDevice,
-              currentDeviceProtocol == .air65V3Official else {
+              currentDeviceProtocol == .airV3Official else {
             failAir65TransactionAndRecover(
-                .protocolFailed("Air65 V3 report channel disappeared")
+                .protocolFailed("Air V3 report channel disappeared")
             )
             return
         }
@@ -913,7 +1058,7 @@ public final class NuPhyHIDTransport: @unchecked Sendable {
         command: AgentLightCommand,
         palette: AgentLightPalette
     ) {
-        guard currentDeviceProtocol == .air65V3Official,
+        guard currentDeviceProtocol == .airV3Official,
               air65SessionKey != nil,
               air65CurrentMode != nil else { return }
         cancelAir65Blink()
@@ -960,7 +1105,7 @@ public final class NuPhyHIDTransport: @unchecked Sendable {
             try await AgentLightTransmissionLock().withAsyncLock {
                 let isActive = queue.sync {
                     air65BlinkGeneration == generation
-                        && currentDeviceProtocol == .air65V3Official
+                        && currentDeviceProtocol == .airV3Official
                         && air65SessionKey != nil
                         && air65CurrentMode != nil
                 }
@@ -969,7 +1114,7 @@ public final class NuPhyHIDTransport: @unchecked Sendable {
                 try await performAir65V3Transaction(
                     command,
                     palette: palette,
-                    brightness: isOn ? 24 : 0,
+                    brightnessPercent: isOn ? palette.brightness(for: command) : 0,
                     effectOverride: .solid
                 )
             }
@@ -1025,7 +1170,7 @@ public final class NuPhyHIDTransport: @unchecked Sendable {
                     return
                 }
                 guard let device = self.currentDevice,
-                      self.currentDeviceProtocol == .air65V3Official,
+                      self.currentDeviceProtocol == .airV3Official,
                       let sessionID = self.activeSessionID else {
                     continuation.resume(throwing: NuPhyHIDError.deviceNotConnected)
                     return
@@ -1128,12 +1273,75 @@ public final class NuPhyHIDTransport: @unchecked Sendable {
                   self.activeSessionID == sessionID,
                   self.air65CurrentMode == nil else { return }
             self.recoverFromReportFailure(
-                .protocolFailed("Air65 V3 mode query timed out"),
+                .protocolFailed("Air V3 mode query timed out"),
                 productName: self.currentDevice.flatMap(self.productName(of:)),
                 transport: .usb
             )
         }
         air65BaseTimeout = timeout
+        queue.asyncAfter(deadline: .now() + 1, execute: timeout)
+    }
+
+    private func beginAir75V3Preflight(on device: IOHIDDevice, sessionID: UUID) {
+        sendAir75V3PreflightRequest(
+            .appDefineSize,
+            on: device,
+            sessionID: sessionID
+        )
+    }
+
+    private func sendAir75V3PreflightRequest(
+        _ stage: Air75V3PreflightStage,
+        on device: IOHIDDevice,
+        sessionID: UUID
+    ) {
+        guard let context = managerContext,
+              context.sessionID == sessionID,
+              let air65SessionKey else { return }
+
+        let report: [UInt8]
+        do {
+            switch stage {
+            case .appDefineSize:
+                report = Air65V3ProtocolEncoder.appDefineSizeRequest(
+                    sessionKey: air65SessionKey
+                )
+            case .modeName(let offset):
+                report = try Air65V3ProtocolEncoder.appDefineRequest(
+                    offset: offset,
+                    sessionKey: air65SessionKey
+                )
+            }
+            try setOutputReport(report, reportID: 0, on: device)
+        } catch let error as NuPhyHIDError {
+            recoverFromReportFailure(
+                error,
+                productName: productName(of: device),
+                transport: .usb
+            )
+            return
+        } catch {
+            recoverFromReportFailure(
+                .protocolFailed(String(describing: error)),
+                productName: productName(of: device),
+                transport: .usb
+            )
+            return
+        }
+
+        air75PreflightStage = stage
+        air75PreflightTimeout?.cancel()
+        let timeout = DispatchWorkItem { [weak self] in
+            guard let self,
+                  self.activeSessionID == sessionID,
+                  self.air75PreflightStage == stage else { return }
+            self.recoverFromReportFailure(
+                .protocolFailed("Air75 V3 preflight timed out"),
+                productName: self.currentDevice.flatMap(self.productName(of:)),
+                transport: .usb
+            )
+        }
+        air75PreflightTimeout = timeout
         queue.asyncAfter(deadline: .now() + 1, execute: timeout)
     }
 
@@ -1145,7 +1353,7 @@ public final class NuPhyHIDTransport: @unchecked Sendable {
     ) {
         guard result == kIOReturnSuccess,
               activeSessionID == sessionID,
-              currentDeviceProtocol == .air65V3Official,
+              currentDeviceProtocol == .airV3Official,
               reportLength == Air65V3ProtocolEncoder.reportSize else { return }
 
         let response = Array(UnsafeBufferPointer(
@@ -1153,6 +1361,115 @@ public final class NuPhyHIDTransport: @unchecked Sendable {
             count: Air65V3ProtocolEncoder.reportSize
         ))
         guard response[0] == 0xAA else { return }
+
+        if response[1] == 0xFA,
+           let sessionKey = air65SessionKey,
+           air75PreflightStage == .appDefineSize {
+            do {
+                _ = try Air65V3ProtocolEncoder.appDefineSize(
+                    from: response,
+                    sessionKey: sessionKey
+                )
+                air75PreflightTimeout?.cancel()
+                air75PreflightTimeout = nil
+                guard let currentDevice, let activeSessionID else {
+                    throw NuPhyHIDError.deviceNotConnected
+                }
+                sendAir75V3PreflightRequest(
+                    .modeName(offset: 0),
+                    on: currentDevice,
+                    sessionID: activeSessionID
+                )
+            } catch {
+                recoverFromReportFailure(
+                    .protocolFailed(String(describing: error)),
+                    productName: currentDevice.flatMap(productName(of:)),
+                    transport: .usb
+                )
+            }
+            return
+        }
+
+        if response[1] == 0xFB,
+           let sessionKey = air65SessionKey,
+           case .modeName(let offset) = air75PreflightStage {
+            do {
+                _ = try Air65V3ProtocolEncoder.appDefine(
+                    from: response,
+                    offset: offset,
+                    sessionKey: sessionKey
+                )
+                air75PreflightTimeout?.cancel()
+                air75PreflightTimeout = nil
+                guard let currentDevice, let activeSessionID else {
+                    throw NuPhyHIDError.deviceNotConnected
+                }
+                if offset == 0 {
+                    sendAir75V3PreflightRequest(
+                        .modeName(offset: 56),
+                        on: currentDevice,
+                        sessionID: activeSessionID
+                    )
+                } else {
+                    air75PreflightStage = nil
+                    beginAir65V3BaseQuery(
+                        on: currentDevice,
+                        sessionID: activeSessionID
+                    )
+                }
+            } catch {
+                recoverFromReportFailure(
+                    .protocolFailed(String(describing: error)),
+                    productName: currentDevice.flatMap(productName(of:)),
+                    transport: .usb
+                )
+            }
+            return
+        }
+
+        if response[1] == 0xA1,
+           let sessionKey = air65SessionKey,
+           let continuation = airV3FirmwareInfoContinuation {
+            do {
+                let info = try Air65V3ProtocolEncoder.firmwareInfo(
+                    from: response,
+                    sessionKey: sessionKey
+                )
+                airV3FirmwareInfoTimeout?.cancel()
+                airV3FirmwareInfoTimeout = nil
+                airV3FirmwareInfoContinuation = nil
+                continuation.resume(returning: info)
+            } catch {
+                airV3FirmwareInfoTimeout?.cancel()
+                airV3FirmwareInfoTimeout = nil
+                airV3FirmwareInfoContinuation = nil
+                continuation.resume(throwing: error)
+            }
+            return
+        }
+
+        if response[1] == 0xD5,
+           let sessionKey = air65SessionKey,
+           let currentMode = air65CurrentMode,
+           let continuation = airV3LightStateContinuation {
+            do {
+                let state = try Air65V3ProtocolEncoder.lightState(
+                    from: response,
+                    sessionKey: sessionKey,
+                    currentMode: currentMode
+                )
+                airV3LightStateTimeout?.cancel()
+                airV3LightStateTimeout = nil
+                airV3LightStateContinuation = nil
+                continuation.resume(returning: state)
+            } catch {
+                airV3LightStateTimeout?.cancel()
+                airV3LightStateTimeout = nil
+                airV3LightStateContinuation = nil
+                continuation.resume(throwing: error)
+            }
+            return
+        }
 
         if response[1] == 0xD6,
            air65SessionKey != nil,
@@ -1168,6 +1485,7 @@ public final class NuPhyHIDTransport: @unchecked Sendable {
             }
 
             acknowledgedAir65Reports += 1
+            lastAir65Acknowledgement = response
             transaction.timeout?.cancel()
             transaction.timeout = nil
             transaction.reportIndex += 1
@@ -1224,7 +1542,11 @@ public final class NuPhyHIDTransport: @unchecked Sendable {
             guard let currentDevice, let activeSessionID else {
                 throw NuPhyHIDError.deviceNotConnected
             }
-            beginAir65V3BaseQuery(on: currentDevice, sessionID: activeSessionID)
+            if integerProperty(kIOHIDProductIDKey, of: currentDevice) == 0x1028 {
+                beginAir75V3Preflight(on: currentDevice, sessionID: activeSessionID)
+            } else {
+                beginAir65V3BaseQuery(on: currentDevice, sessionID: activeSessionID)
+            }
         } catch {
             recoverFromReportFailure(
                 .protocolFailed(String(describing: error)),
@@ -1247,8 +1569,21 @@ public final class NuPhyHIDTransport: @unchecked Sendable {
         }
         air65HandshakeTimeout?.cancel()
         air65HandshakeTimeout = nil
+        air75PreflightTimeout?.cancel()
+        air75PreflightTimeout = nil
+        air75PreflightStage = nil
         air65BaseTimeout?.cancel()
         air65BaseTimeout = nil
+        airV3FirmwareInfoTimeout?.cancel()
+        airV3FirmwareInfoTimeout = nil
+        let firmwareInfoContinuation = airV3FirmwareInfoContinuation
+        airV3FirmwareInfoContinuation = nil
+        firmwareInfoContinuation?.resume(throwing: error)
+        airV3LightStateTimeout?.cancel()
+        airV3LightStateTimeout = nil
+        let lightStateContinuation = airV3LightStateContinuation
+        airV3LightStateContinuation = nil
+        lightStateContinuation?.resume(throwing: error)
         let continuation = air65HandshakeContinuation
         air65HandshakeContinuation = nil
         continuation?.resume(throwing: error)

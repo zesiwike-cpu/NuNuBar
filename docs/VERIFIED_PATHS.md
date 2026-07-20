@@ -5,11 +5,12 @@ after the exact hardware and host combination completes installation, state
 lighting, disconnect recovery, and normal keyboard-use checks. Compiling or
 matching a USB product ID is not enough.
 
-## Two verified paths
+## Three verified paths
 
 | Host and keyboard | Status | Recommended path |
 | --- | --- | --- |
 | Apple Silicon Mac, macOS 14+, Air65 V3 `19F5:102B` | Hardware verified for wired Codex lighting and optional knob mapping | Official USB control interface; no firmware and no DFU |
+| Apple Silicon Mac, macOS 14+, Air75 V3 `19F5:1028` | Hardware verified for official wired side-light control | Official firmware `1.0.14.6` or later; separately approved NuPhyIO update only when older |
 | Apple Silicon Mac, Air96 V2 ANSI `19F5:3266` | Verified with custom firmware v7 | Test existing firmware first; only failure requires backup, recovery image, and two flash confirmations |
 
 Air60 V2, Air75 V2, Halo75 V2, Windows, Intel Mac, other NuPhy families, and
@@ -22,8 +23,8 @@ remain for contributors, but Codex must not choose them during ordinary setup.
 2. Detect the application-mode USB VID/PID, HID usage, and report sizes.
 3. Match exactly one row in the support matrix and the allowlists in
    `AGENTS.md`.
-4. Require `setupPlan.path` to equal `air65-v3-macos-wired` or
-   `air96-v2-ansi-macos-v7`. Otherwise stop.
+4. Require `setupPlan.path` to equal `air65-v3-macos-wired`,
+   `air75-v3-macos-wired-1.0.14.6`, or `air96-v2-ansi-macos-v7`. Otherwise stop.
 5. Keep app installation, Hook configuration, DFU entry, and firmware writing
    as separate approvals.
 6. Finish with the success checklist below. Do not call the setup successful
@@ -65,6 +66,25 @@ verified with official Karabiner-Elements 16.1.0. It is not required for status
 lighting and never changes the V2 firmware matrix. See
 [`AIR65_V3_FN_SHORTCUT.md`](AIR65_V3_FN_SHORTCUT.md).
 
+## Air75 V3 verified path
+
+Air75 V3 uses its official `19F5:1028`, HID `0001:0000`, 64-byte wired control
+interface. NuNuBar reads the official firmware version and requires `1.0.14.6`
+or later. On the tested keyboard, `1.0.13.6` acknowledged side-light writes but
+did not apply them; NuPhyIO reproduced the same behavior. After an official
+NuPhyIO backup, update, reboot, and configuration restore, both NuPhyIO and
+NuNuBar changed the side lights correctly.
+
+Read [`AIR75_V3_VERIFICATION.md`](AIR75_V3_VERIFICATION.md) before setup. This
+route never uses a bundled Air75 V2 image. Keep NuPhyIO closed while NuNuBar is
+running because both applications own the same device-global HID session.
+
+NuNuBar 0.15.0 also exposes the model-specific 75% key mapping editor documented
+in [`AIR75_V3_KEY_MAPPING.md`](AIR75_V3_KEY_MAPPING.md). Its exact `19F5:1028`
+Karabiner rule generation is covered by automated tests. Do not promote the
+Air75 knob route to hardware-verified until `F21`/`F22`/`F23` and a real mapped
+action have been physically observed.
+
 ## Air96 V2 ANSI verified path
 
 Air96 V2 uses a different route. The App must test the installed firmware first.
@@ -86,6 +106,7 @@ A verified setup must satisfy all applicable items:
 - configured color and effect changes reach every intended lighting zone;
 - real Codex lifecycle events, not only a direct demo, change the keyboard;
 - read-only inspection does not interrupt later Air65 V3 updates;
+- Air75 V3 reports official firmware `1.0.14.6` or later before final acceptance;
 - USB unplug/replug restores the current state without restarting NuNuBar;
 - unrelated Hooks and user configuration remain intact;
 - the user knows the uninstall and, for V2 firmware, official recovery path.
@@ -109,3 +130,7 @@ For Air65 V3 that remains on one color:
 
 Do not solve an Air65 V3 connection problem by entering DFU or flashing a V2
 image.
+
+For Air75 V3, first check the firmware version in NuNuBar. Below `1.0.14.6`,
+back up in NuPhyIO and use only the separately approved official update. At or
+above the minimum, close NuPhyIO before diagnosing NuNuBar or Hooks.

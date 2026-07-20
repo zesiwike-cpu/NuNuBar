@@ -113,6 +113,21 @@ final class KeyboardSetupModel {
         selectedTarget?.usesOfficialFirmware == true
     }
 
+    var minimumOfficialFirmwareVersion: OfficialFirmwareVersion? {
+        selectedTarget?.minimumOfficialFirmwareVersion
+    }
+
+    var officialFirmwareNeedsUpdate: Bool {
+        guard let minimumOfficialFirmwareVersion,
+              let installed = appModel.airV3FirmwareVersion else { return false }
+        return installed < minimumOfficialFirmwareVersion
+    }
+
+    var officialFirmwareCheckPending: Bool {
+        minimumOfficialFirmwareVersion != nil
+            && appModel.airV3FirmwareVersion == nil
+    }
+
     private var selectedFirmware: BundledFirmware? {
         selectedTarget?.bundledFirmware
     }
@@ -145,6 +160,8 @@ final class KeyboardSetupModel {
                 deviceDetected: usbDevice != nil,
                 hidAccessGranted: appModel.hidAccessState == .granted
             )
+                && !officialFirmwareCheckPending
+                && !officialFirmwareNeedsUpdate
         case .compatibility:
             compatibilityTestCompleted && compatibility != .notChecked
         case .confirmation:

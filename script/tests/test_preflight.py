@@ -115,6 +115,30 @@ class PreflightClassificationTests(unittest.TestCase):
         self.assertEqual(plan["nextAction"], "run-light-self-test-and-real-codex-acceptance")
         self.assertIn("Never enter DFU", plan["summary"])
 
+    def test_air75_selects_official_minimum_firmware_path(self) -> None:
+        device = preflight.classify_devices(
+            "macOS",
+            [usb(0x1028, "Air75 V3")],
+            [hid(0x1028, 0x0001, 0x0000, 64, 64, product="Air75 V3")],
+        )[0]
+        report = {
+            "repository": {"verified": True},
+            "host": {"os": "macOS", "architecture": "arm64"},
+            "installation": {"installed": True, "codexHooksPresent": True},
+            "keyboards": [device],
+        }
+
+        plan = preflight.build_setup_plan(report)
+
+        self.assertTrue(device["controlInterfaceReady"])
+        self.assertEqual(device["minimumFirmwareVersion"], "1.0.14.6")
+        self.assertTrue(plan["eligible"])
+        self.assertEqual(plan["path"], "air75-v3-macos-wired-1.0.14.6")
+        self.assertEqual(
+            plan["nextAction"],
+            "verify-air75-firmware-and-run-real-codex-acceptance",
+        )
+
     def test_setup_plan_makes_air96_self_test_precede_any_flash(self) -> None:
         report = {
             "repository": {"verified": True},

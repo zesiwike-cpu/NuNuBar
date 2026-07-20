@@ -46,13 +46,31 @@ struct KeyboardSettingsView: View {
             if let keyboardError = model.keyboardError {
                 SettingsNotice(text: keyboardError, isError: true)
             }
+            if let firmwareError = model.airV3FirmwareError {
+                SettingsNotice(text: firmwareError, isError: true)
+            }
 
-            if isAir65V3Connected {
-                SettingsNotice(text: language == .simplifiedChinese
-                    ? "Air65 V3 使用官方有线控制接口，无需刷写固件。活动灯光配置：\(model.air65CurrentMode.map(String.init) ?? "读取中")。"
-                    : "Air65 V3 uses its official wired control interface with no firmware flashing. Active light profile: \(model.air65CurrentMode.map(String.init) ?? "reading").")
+            if let officialAirV3Profile {
+                SettingsNotice(text: officialFirmwareSummary(officialAirV3Profile))
+                if officialFirmwareNeedsUpdate(officialAirV3Profile) {
+                    SettingsNotice(
+                        text: language == .simplifiedChinese
+                            ? "Air75 V3 需要升级到官方固件 \(officialAirV3Profile.minimumFirmwareVersion!) 或更高版本，才能可靠应用侧灯状态。"
+                            : "Air75 V3 requires official firmware \(officialAirV3Profile.minimumFirmwareVersion!) or later to apply side-light states reliably.",
+                        isError: true
+                    )
+                    Link(destination: URL(string: "https://drive.nuphy.io")!) {
+                        Label(
+                            language == .simplifiedChinese ? "打开 NuPhyIO 升级" : "Open NuPhyIO to update",
+                            systemImage: "arrow.up.circle"
+                        )
+                    }
+                    .font(.system(size: SettingsLayout.actionTextSize))
+                }
+            }
 
-                Air65KeyMappingSettings()
+            if let mappingProfile {
+                NuPhyKeyMappingSettings(profile: mappingProfile)
             }
 
             if model.keyboardTransport == .usb {
@@ -111,10 +129,38 @@ struct KeyboardSettingsView: View {
         model.keyboardModel ?? language.text(.nuphyKeyboard)
     }
 
-    private var isAir65V3Connected: Bool {
-        model.isConnected
-            && model.keyboardTransport == .usb
-            && model.keyboardModel?.caseInsensitiveCompare("Air65 V3") == .orderedSame
+    private var mappingProfile: NuPhyKeyboardMappingProfile? {
+        guard model.isConnected,
+              model.keyboardTransport == .usb,
+              let keyboardModel = model.keyboardModel else { return nil }
+        return NuPhyKeyboardMappingProfile.allCases.first {
+            keyboardModel.caseInsensitiveCompare($0.productName) == .orderedSame
+        }
+    }
+
+    private var officialAirV3Profile: OfficialKeyboardProfile? {
+        guard model.isConnected,
+              model.keyboardTransport == .usb,
+              let keyboardModel = model.keyboardModel else { return nil }
+        return SupportedOfficialNuPhyKeyboard.models.first {
+            keyboardModel.caseInsensitiveCompare($0.productName) == .orderedSame
+        }
+    }
+
+    private func officialFirmwareNeedsUpdate(_ profile: OfficialKeyboardProfile) -> Bool {
+        guard let minimum = profile.minimumFirmwareVersion,
+              let installed = model.airV3FirmwareVersion else { return false }
+        return installed < minimum
+    }
+
+    private func officialFirmwareSummary(_ profile: OfficialKeyboardProfile) -> String {
+        let mode = model.air65CurrentMode.map(String.init) ?? (language == .simplifiedChinese ? "读取中" : "reading")
+        let version = model.airV3FirmwareVersion?.description
+            ?? (profile.minimumFirmwareVersion == nil ? nil : (language == .simplifiedChinese ? "读取中" : "reading"))
+        if language == .simplifiedChinese {
+            return "\(profile.productName) 使用官方有线控制接口。固件：\(version ?? "官方")；活动灯光配置：\(mode)。"
+        }
+        return "\(profile.productName) uses its official wired control interface. Firmware: \(version ?? "official"); active light profile: \(mode)."
     }
 
     private var statusColor: Color {

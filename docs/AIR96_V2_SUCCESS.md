@@ -1,6 +1,6 @@
 # Air96 V2 ANSI verified setup
 
-This is one of NuNuBar's two hardware-verified normal-user paths. It applies
+This is one of NuNuBar's three hardware-verified normal-user paths. It applies
 only to an exact NuPhy Air96 V2 ANSI connected to an Apple Silicon Mac by USB.
 
 ## What the user needs

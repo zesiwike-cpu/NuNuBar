@@ -148,6 +148,7 @@ func exactAir65V3SetupIdentity() throws {
     #expect(match.target.displayName == "NuPhy Air65 V3")
     #expect(match.target.usesOfficialFirmware)
     #expect(match.target.bundledFirmware == nil)
+    #expect(match.target.minimumOfficialFirmwareVersion == nil)
     #expect(USBKeyboardDetector.matchingSetupDevices([wrongProductName], in: nil).isEmpty)
     #expect(USBKeyboardDetector.matchingSetupDevices([wrongProductID], in: nil).isEmpty)
 }
@@ -158,6 +159,38 @@ func officialFirmwareSetupRoute() {
         == KeyboardSetupStage.codex.rawValue)
     #expect(KeyboardSetupRoute.stageAfterKeyboard(usesOfficialFirmware: false).rawValue
         == KeyboardSetupStage.compatibility.rawValue)
+}
+
+@Test("Air75 V3 setup uses its exact official USB identity without firmware")
+func exactAir75V3SetupIdentity() throws {
+    let air75 = USBDeviceIdentity(
+        vendorID: 0x19F5,
+        productID: 0x1028,
+        productName: "Air75 V3"
+    )
+    let matches = USBKeyboardDetector.matchingSetupDevices([air75], in: nil)
+    let match = try #require(matches.first)
+
+    #expect(matches.count == 1)
+    #expect(match.target.modelIdentifier == "air75-v3")
+    #expect(match.target.displayName == "NuPhy Air75 V3")
+    #expect(match.target.usesOfficialFirmware)
+    #expect(match.target.bundledFirmware == nil)
+    #expect(match.target.minimumOfficialFirmwareVersion?.description == "1.0.14.6")
+}
+
+@Test("Air75 V3 firmware payload decodes and compares official versions")
+func air75FirmwareVersion() throws {
+    let current = try #require(OfficialFirmwareVersion(
+        airV3Payload: [0x0E, 0x00, 0x01, 0xAA, 0x06, 0x00, 0xBD, 0xBD]
+    ))
+    let older = try #require(OfficialFirmwareVersion(
+        airV3Payload: [0x0D, 0x00, 0x01, 0xAA, 0x06, 0x00, 0xBD, 0xBD]
+    ))
+
+    #expect(current.description == "1.0.14.6")
+    #expect(older < current)
+    #expect(OfficialFirmwareVersion(airV3Payload: [0x0E, 0x00]) == nil)
 }
 
 @Test("V2 setup tests installed firmware before offering DFU")

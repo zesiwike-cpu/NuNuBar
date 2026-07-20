@@ -2,7 +2,7 @@
 set -euo pipefail
 
 APP_NAME="NuNuBar"
-APP_VERSION="${APP_VERSION:-0.13.1}"
+APP_VERSION="${APP_VERSION:-0.15.0}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
 DMG_PATH="$DIST_DIR/$APP_NAME-$APP_VERSION-macOS-arm64.dmg"

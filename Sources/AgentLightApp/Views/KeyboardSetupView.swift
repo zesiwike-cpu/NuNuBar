@@ -184,7 +184,22 @@ struct KeyboardSetupView: View {
 
             SetupNotice(text: copy.inputPrivacy)
             if setup.usesOfficialFirmware {
-                SetupNotice(text: copy.air65OfficialFirmware)
+                SetupNotice(text: copy.airV3OfficialFirmware)
+                if let minimum = setup.minimumOfficialFirmwareVersion {
+                    SetupStatusRow(
+                        icon: "externaldrive.badge.checkmark",
+                        title: copy.officialFirmwareVersion,
+                        detail: setup.appModel.airV3FirmwareVersion?.description ?? copy.reading,
+                        color: setup.officialFirmwareNeedsUpdate ? .red : (setup.officialFirmwareCheckPending ? .orange : .green)
+                    ) { EmptyView() }
+                    if setup.officialFirmwareNeedsUpdate {
+                        SetupNotice(text: copy.air75FirmwareUpdateRequired(minimum), isError: true)
+                        Link(destination: URL(string: "https://drive.nuphy.io")!) {
+                            Label(copy.openNuPhyIO, systemImage: "arrow.up.circle")
+                        }
+                        .font(.system(size: 11.5))
+                    }
+                }
             }
         }
     }
@@ -639,7 +654,7 @@ private struct KeyboardSetupCopy {
     var setupAssistant: String { value("键盘设置助手", "Keyboard Setup") }
     var welcomeBody: String { value("这个向导会识别键盘的精确型号，在需要时刷入对应固件，并让 Codex 状态自动显示在 NuPhy 状态灯上。", "This assistant identifies the exact keyboard model, installs matching firmware when required, and shows Codex status on the NuPhy status lights.") }
     var supportedKeyboard: String { value("受支持的 NuPhy 键盘", "Supported NuPhy keyboard") }
-    var supportedModels: String { value("Air65 V3 / Air60 / 75 / 96 / Halo75 V2 ANSI", "Air65 V3 / Air60 / 75 / 96 / Halo75 V2 ANSI") }
+    var supportedModels: String { value("Air65 / Air75 V3 / Air60 / 75 / 96 / Halo75 V2 ANSI", "Air65 / Air75 V3 / Air60 / 75 / 96 / Halo75 V2 ANSI") }
     var officialFirmware: String { value("官方固件", "Official firmware") }
     var usbSync: String { value("USB 同步", "USB sync") }
     var customLights: String { value("自定义灯效", "Custom lights") }
@@ -657,7 +672,16 @@ private struct KeyboardSetupCopy {
     var permissionNeeded: String { value("需要允许", "Permission required") }
     var allow: String { value("允许访问", "Allow Access") }
     var inputPrivacy: String { value("NuNuBar 只使用 HID 输出接口向键盘发送状态，不读取或保存按键。", "NuNuBar only uses HID output to send status. It never reads or stores keystrokes.") }
-    var air65OfficialFirmware: String { value("Air65 V3 使用官方固件自带的有线灯光接口，不进入 DFU，也不会刷写键盘。", "Air65 V3 uses the wired lighting interface built into its official firmware. It never enters DFU or flashes the keyboard.") }
+    var airV3OfficialFirmware: String { value("Air V3 使用官方固件自带的有线灯光接口，不进入 DFU，也不会刷写键盘。", "Air V3 uses the wired lighting interface built into its official firmware. It never enters DFU or flashes the keyboard.") }
+    var officialFirmwareVersion: String { value("官方固件版本", "Official firmware version") }
+    var reading: String { value("读取中", "Reading") }
+    var openNuPhyIO: String { value("打开 NuPhyIO 升级", "Open NuPhyIO to update") }
+    func air75FirmwareUpdateRequired(_ version: OfficialFirmwareVersion) -> String {
+        value(
+            "Air75 V3 需要官方固件 \(version) 或更高版本。升级前 NuPhyIO 会备份并在重启后恢复键盘配置。",
+            "Air75 V3 requires official firmware \(version) or later. NuPhyIO backs up and restores keyboard configuration during the update."
+        )
+    }
     var firmwareVersionUnknown: String { value("尚未验证现有固件的状态灯通道", "Existing firmware status-light support is not verified") }
     var startSelfTest: String { value("开始灯光自检", "Start Light Test") }
     var selfTestSent: String { value("橙、绿、红三种状态已发送", "Orange, green, and red states were sent") }

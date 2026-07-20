@@ -26,15 +26,15 @@ firmware source/build records. Do not upload local DMGs, signing certificates,
 notary credentials, VIA backups, official recovery images, or user Hook files.
 
 Before creating a version tag, enable GitHub Actions and configure every Apple
-signing and notarization secret. Pushing `v0.13.1` starts the Release workflow.
+signing and notarization secret. Pushing `v0.14.1` starts the Release workflow.
 If any required secret is absent, the workflow refuses to create a public
 release. Ad-hoc `UNNOTARIZED` artifacts remain available from ordinary CI for
 development testing only and are never the general-user release fallback.
 
 ## Verified public audience
 
-The normal public release is currently for Apple Silicon macOS with either
-Air65 V3 or Air96 V2 ANSI. Windows and other keyboard targets remain in source
+The normal public release is currently for Apple Silicon macOS with Air65 V3,
+Air75 V3, or Air96 V2 ANSI. Windows and other keyboard targets remain in source
 and CI for contributors, but the Release workflow does not publish them as
 normal-user downloads.
 
@@ -43,7 +43,9 @@ normal-user downloads.
 1. Open the downloaded repository in Codex and run the read-only
    `python3 script/preflight.py --json` before choosing a route.
 2. Install `NuNuBar.app` from the notarized DMG and launch it.
-3. The app directly detects Air65 V3 through its official control interface.
+3. The app directly detects Air65/Air75 V3 through their official control
+   interfaces. Air75 V3 requires official firmware `1.0.14.6` or later; older
+   versions stop for a separately approved NuPhyIO backup and official update.
    For an exact Air96 V2 ANSI, run the App light self-test first. If the status
    lights already respond, keep the installed firmware and skip every DFU step.
 4. Only when an exact Air96 V2 ANSI has no compatible status-light response, the
@@ -94,7 +96,7 @@ Gatekeeper assessment, and prints the final SHA-256.
   required; the repository cannot supply them, and the public Release workflow
   fails closed when they are missing.
 - The public normal-user build supports only Apple Silicon, macOS 14 or later,
-  Air65 V3 official wired control, and the verified Air96 V2 ANSI v7 route.
+  Air65/Air75 V3 official wired control, and the verified Air96 V2 ANSI v7 route.
 - Air60 V2, Air75 V2, Halo75 V2, Windows, and other targets remain contributor
   assets until matching hardware validation is complete.
 - Firmware remains model-specific. USB VID/PID detection does not replace the

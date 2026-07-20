@@ -14,6 +14,14 @@ struct AgentLightCLI {
                 // Enumeration must not replace the device-global Air65 V3 session
                 // currently owned by the menu app.
                 print(try NuPhyHIDTransport(preparesAir65Session: false).describe())
+            case .firmwareInfo:
+                let info = try await NuPhyHIDTransport().readAirV3FirmwareInfo()
+                print(info.map { String(format: "%02X", $0) }.joined(separator: " "))
+            case .lightState:
+                let state = try await NuPhyHIDTransport().readAirV3LightState()
+                print(state.map { String(format: "%02X", $0) }.joined(separator: " "))
+            case .roundTrip:
+                try await runRoundTrip()
             case .demo:
                 try await runDemo()
             case .recoveryTest(let iterations):
@@ -63,6 +71,23 @@ struct AgentLightCLI {
         }
         try await transport.send(.idle, palette: palette)
         print("idle: restored")
+    }
+
+    private static func runRoundTrip() async throws {
+        let transport = NuPhyHIDTransport()
+        let palette = AgentLightPaletteStore().load()
+        let before = try await transport.readAirV3LightState()
+        try await transport.send(.working, palette: palette)
+        let after = try await transport.readAirV3LightState()
+        let acknowledgement = transport.diagnostics().lastAir65Acknowledgement
+
+        print("before: \(hex(before))")
+        print("after:  \(hex(after))")
+        print("ack:    \(acknowledgement.map(hex) ?? "none")")
+    }
+
+    private static func hex(_ bytes: [UInt8]) -> String {
+        bytes.map { String(format: "%02X", $0) }.joined(separator: " ")
     }
 
     private static func runStress(iterations: Int) async throws {

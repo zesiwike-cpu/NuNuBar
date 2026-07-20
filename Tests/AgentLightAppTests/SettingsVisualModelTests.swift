@@ -41,12 +41,20 @@ func configurableLightEffectPreviews() {
     let breatheHigh = LightStripModel.samples(effect: .breathe, time: 1, count: 5, baseColor: orange)
     let blinkOn = LightStripModel.samples(effect: .blink, time: 0, count: 5, baseColor: orange)
     let blinkOff = LightStripModel.samples(effect: .blink, time: 0.75, count: 5, baseColor: orange)
+    let dimmed = LightStripModel.samples(
+        effect: .solid,
+        time: 0,
+        count: 5,
+        baseColor: orange,
+        brightnessPercent: 40
+    )
 
     #expect(solid.allSatisfy { $0.brightness == 1 })
     #expect(breatheLow.allSatisfy { $0.brightness < 0.2 })
     #expect(breatheHigh.allSatisfy { $0.brightness > 0.95 })
     #expect(blinkOn.allSatisfy { $0.brightness == 1 })
     #expect(blinkOff.allSatisfy { $0.brightness < 0.05 })
+    #expect(dimmed.allSatisfy { abs($0.brightness - 0.4) < 0.001 })
     #expect(solid.allSatisfy { abs($0.hue - 0.052) < 0.001 })
 }
 

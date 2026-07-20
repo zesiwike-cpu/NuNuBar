@@ -43,6 +43,7 @@ EXPECTED_MODELS = {
 
 VERIFIED_NORMAL_PATHS = {
     "air65-v3-macos-wired",
+    "air75-v3-macos-wired-1.0.14.6",
     "air96-v2-ansi-macos-v7",
 }
 
@@ -145,14 +146,16 @@ def verify_handoff_docs() -> None:
     required_phrases = {
         ROOT / "AGENTS.md": [
             "air65-v3-macos-wired",
+            "air75-v3-macos-wired-1.0.14.6",
             "air96-v2-ansi-macos-v7",
             "never flash",
             "script/preflight.py",
         ],
-        ROOT / "README.md": ["Air65 V3", "Air96 V2 ANSI", "Codex setup", "script/preflight.py", "Karabiner-Elements"],
-        ROOT / "README.zh-CN.md": ["Air65 V3", "Air96 V2 ANSI", "交给 Codex", "script/preflight.py", "Karabiner-Elements"],
+        ROOT / "README.md": ["Air65 V3", "Air75 V3", "Air96 V2 ANSI", "Codex setup", "script/preflight.py", "Karabiner-Elements"],
+        ROOT / "README.zh-CN.md": ["Air65 V3", "Air75 V3", "Air96 V2 ANSI", "交给 Codex", "script/preflight.py", "Karabiner-Elements"],
         ROOT / "START_HERE.md": [
             "air65-v3-macos-wired",
+            "air75-v3-macos-wired-1.0.14.6",
             "air96-v2-ansi-macos-v7",
             "setupPlan",
             "script/preflight.py",
@@ -163,11 +166,13 @@ def verify_handoff_docs() -> None:
         ROOT / "docs" / "CODEX_SETUP.zh-CN.md": ["Codex Hooks 操作步骤", "hooks.json", "PermissionRequest", "Karabiner-Elements"],
         ROOT / "docs" / "VERIFIED_PATHS.md": [
             "air65-v3-macos-wired",
+            "air75-v3-macos-wired-1.0.14.6",
             "air96-v2-ansi-macos-v7",
             "AIR96_V2_SUCCESS.md",
         ],
         ROOT / "docs" / "VERIFIED_PATHS.zh-CN.md": [
             "air65-v3-macos-wired",
+            "air75-v3-macos-wired-1.0.14.6",
             "air96-v2-ansi-macos-v7",
             "AIR96_V2_SUCCESS.zh-CN.md",
         ],
@@ -194,6 +199,18 @@ def verify_handoff_docs() -> None:
         ],
         ROOT / "docs" / "AIR65_V3_FN_SHORTCUT.md": ["19F5:102B", "F24", "keyboard_fn", "Karabiner-Elements 16.1.0"],
         ROOT / "docs" / "AIR65_V3_FN_SHORTCUT.zh-CN.md": ["19F5:102B", "F24", "keyboard_fn", "Karabiner-Elements 16.1.0"],
+        ROOT / "docs" / "AIR75_V3_VERIFICATION.md": [
+            "air75-v3-macos-wired-1.0.14.6",
+            "19F5:1028",
+            "1.0.14.6",
+            "D6",
+        ],
+        ROOT / "docs" / "AIR75_V3_VERIFICATION.zh-CN.md": [
+            "air75-v3-macos-wired-1.0.14.6",
+            "19F5:1028",
+            "1.0.14.6",
+            "D6",
+        ],
         ROOT / "docs" / "AIR96_V2_SUCCESS.md": [
             "air96-v2-ansi-macos-v7",
             "existing firmware",
@@ -233,12 +250,22 @@ def verify_preflight_catalog() -> None:
     if air65.get("platforms") != ["macOS"]:
         fail("Air65 V3 preflight route is currently macOS-only")
 
+    air75 = catalog.get(0x1028)
+    if not isinstance(air75, dict):
+        fail("preflight catalog is missing Air75 V3")
+    if air75.get("route") != "official-wired-control-min-1.0.14.6":
+        fail("Air75 V3 preflight route must require the verified official firmware")
+    if air75.get("status") != "verified" or air75.get("platforms") != ["macOS"]:
+        fail("Air75 V3 preflight route must remain verified and macOS-only")
+    if air75.get("minimumFirmwareVersion") != "1.0.14.6":
+        fail("Air75 V3 minimum official firmware must remain 1.0.14.6")
+
     expected_by_product = {
         expected["product_id"]: (model, expected)
         for model, expected in EXPECTED_MODELS.items()
     }
-    if set(catalog) != {0x102B, *expected_by_product}:
-        fail("preflight catalog must contain only Air65 V3 and the four V2 models")
+    if set(catalog) != {0x102B, 0x1028, *expected_by_product}:
+        fail("preflight catalog must contain Air65/Air75 V3 and the four V2 models")
     for product_id, (model, expected) in expected_by_product.items():
         entry = catalog[product_id]
         if entry.get("status") != expected["status"]:
@@ -255,6 +282,12 @@ def verify_preflight_catalog() -> None:
             "installation": {"installed": True, "codexHooksPresent": True},
             "keyboards": [{"productId": "102B", "controlInterfaceReady": True}],
         },
+        "air75-v3-macos-wired-1.0.14.6": {
+            "repository": {"verified": True},
+            "host": {"os": "macOS", "architecture": "arm64"},
+            "installation": {"installed": True, "codexHooksPresent": True},
+            "keyboards": [{"productId": "1028", "controlInterfaceReady": True}],
+        },
         "air96-v2-ansi-macos-v7": {
             "repository": {"verified": True},
             "host": {"os": "macOS", "architecture": "arm64"},
@@ -267,7 +300,7 @@ def verify_preflight_catalog() -> None:
         for report in sample_reports.values()
     }
     if selected_paths != VERIFIED_NORMAL_PATHS:
-        fail("preflight must expose exactly the two verified normal-user path IDs")
+        fail("preflight must expose exactly the three verified normal-user path IDs")
 
     windows_report = {
         "repository": {"verified": True},
@@ -286,7 +319,7 @@ def verify_public_release_scope() -> None:
             fail(f"public Release workflow must not publish contributor asset: {forbidden}")
     for required in (
         "needs: [macos]",
-        "Air65 V3 or Air96 V2 ANSI only",
+        "Air65 V3, Air75 V3, or Air96 V2 ANSI only",
         "START_HERE.md",
     ):
         if required not in workflow:
@@ -307,6 +340,7 @@ def main() -> int:
     print(f"NuNuBar {version} repository verification passed")
     print("Normal-user verified paths:")
     print("- air65-v3-macos-wired: official firmware, no flash")
+    print("- air75-v3-macos-wired-1.0.14.6: official firmware 1.0.14.6 or later")
     print("- air96-v2-ansi-macos-v7: self-test first, conditional v7 firmware")
     print("Contributor test assets retained: air60-v2-ansi, air75-v2-ansi, halo75-v2-ansi, Windows")
     return 0

@@ -2,6 +2,18 @@ import Foundation
 import Testing
 @testable import AgentLightApp
 
+@Test("NuPhyIO button opens the current official 2.0 entry with App language")
+func nuphyIOButtonUsesCurrentOfficialEntry() {
+    #expect(
+        Air65FnShortcutService.nuphyIOURL(languageCode: "zh-CN").absoluteString
+            == "https://drive.nuphy.io/?lang=zh-CN"
+    )
+    #expect(
+        Air65FnShortcutService.nuphyIOURL(languageCode: "en-US").absoluteString
+            == "https://drive.nuphy.io/?lang=en-US"
+    )
+}
+
 @Test("Air65 input diagnostics recognize F21 through F24 and Fn Globe")
 func air65InputDiagnosticsRecognizeCarriers() throws {
     for number in 21...24 {
@@ -49,6 +61,32 @@ func air65KeyboardLayoutExposesKnobEvents() throws {
     #expect(right.isMappable)
 }
 
+@Test("Air75 keyboard layout matches the physical 75 percent ANSI arrangement")
+func air75KeyboardLayoutMatchesPhysicalArrangement() throws {
+    let profile = NuPhyKeyboardMappingProfile.air75V3
+
+    #expect(profile.productName == "Air75 V3")
+    #expect(profile.productID == 0x1028)
+    #expect(profile.rows.count == 6)
+    #expect(profile.rows[0].first?.id == "escape")
+    #expect(profile.rows[0].last?.id == Air65KeyboardLayout.knobKeyID)
+    #expect(profile.rows[1].last?.id == "page_up")
+    #expect(profile.rows[2].last?.id == "page_down")
+    #expect(profile.key(id: "f12")?.inputKeyCode == "f12")
+    #expect(profile.key(id: "page_down")?.legend == "PGDN")
+    #expect(profile.key(id: "fn")?.inputKeyCode == nil)
+    #expect(profile.highlightedKeyID == nil)
+}
+
+@Test("Air75 keyboard layout exposes the three knob carrier events")
+func air75KeyboardLayoutExposesKnobEvents() throws {
+    let profile = NuPhyKeyboardMappingProfile.air75V3
+
+    #expect(profile.key(id: Air65KeyboardLayout.knobLeftKeyID)?.inputKeyCode == "f21")
+    #expect(profile.key(id: Air65KeyboardLayout.knobPressKeyID)?.inputKeyCode == "f22")
+    #expect(profile.key(id: Air65KeyboardLayout.knobRightKeyID)?.inputKeyCode == "f23")
+}
+
 @Test("Air65 keyboard layout reports duplicate carrier assignments")
 func air65KeyboardLayoutReportsDuplicateCarriers() {
     let duplicates = Air65KeyboardLayout.duplicateCarriers(in: [
@@ -68,6 +106,55 @@ func air65MappingReaderImportsLegacyRule() throws {
     let mappings = try Air65FnShortcutService.mappings(in: installed)
 
     #expect(mappings == [.verifiedYellowKey])
+}
+
+@Test("Air75 mapping rule is scoped to the exact keyboard and isolated from Air65")
+func air75MappingRuleIsExactlyScoped() throws {
+    let original = Data("{\"profiles\":[{\"name\":\"Default\",\"selected\":true}]}".utf8)
+    let mapping = Air65KeyMapping(
+        keyID: Air65KeyboardLayout.knobPressKeyID,
+        inputKeyCode: "f22",
+        action: .codexNewTask
+    )
+    let configured = try Air65FnShortcutService.configurationByUpsertingMapping(
+        mapping,
+        in: original,
+        profile: .air75V3
+    )
+
+    #expect(try Air65FnShortcutService.mappings(in: configured, profile: .air75V3) == [mapping])
+    #expect(try Air65FnShortcutService.mappings(in: configured, profile: .air65V3).isEmpty)
+
+    let root = try #require(JSONSerialization.jsonObject(with: configured) as? [String: Any])
+    let profiles = try #require(root["profiles"] as? [[String: Any]])
+    let complex = try #require(profiles[0]["complex_modifications"] as? [String: Any])
+    let rules = try #require(complex["rules"] as? [[String: Any]])
+    #expect(rules[0]["description"] as? String == "NuNuBar Air75 V3 Mapping: knob_press")
+    let manipulators = try #require(rules[0]["manipulators"] as? [[String: Any]])
+    let conditions = try #require(manipulators[0]["conditions"] as? [[String: Any]])
+    let identifiers = try #require(conditions[0]["identifiers"] as? [[String: Any]])
+    #expect(identifiers[0]["vendor_id"] as? Int == 0x19F5)
+    #expect(identifiers[0]["product_id"] as? Int == 0x1028)
+}
+
+@Test("Air65 and Air75 mappings coexist without replacing each other")
+func air65AndAir75MappingsCoexist() throws {
+    let original = Data("{\"profiles\":[{\"name\":\"Default\",\"selected\":true}]}".utf8)
+    let air65 = Air65KeyMapping(keyID: "n", inputKeyCode: "n", action: .escape)
+    let air75 = Air65KeyMapping(keyID: "n", inputKeyCode: "n", action: .codexNewTask)
+    let withAir65 = try Air65FnShortcutService.configurationByUpsertingMapping(
+        air65,
+        in: original,
+        profile: .air65V3
+    )
+    let configured = try Air65FnShortcutService.configurationByUpsertingMapping(
+        air75,
+        in: withAir65,
+        profile: .air75V3
+    )
+
+    #expect(try Air65FnShortcutService.mappings(in: configured, profile: .air65V3) == [air65])
+    #expect(try Air65FnShortcutService.mappings(in: configured, profile: .air75V3) == [air75])
 }
 
 @Test("Air65 mappings coexist and updating one key remains idempotent")

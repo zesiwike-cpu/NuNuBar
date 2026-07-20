@@ -10,7 +10,7 @@ func localizedHIDError() {
             == "需要允许 NuNuBar 访问键盘 HID 接口")
 }
 
-@Test("the HID manager enumerates BLE, Raw HID, and Air65 V3 control interfaces")
+@Test("the HID manager enumerates BLE, Raw HID, and official Air V3 control interfaces")
 func scopedDeviceMatching() {
     let matchers = NuPhyHIDTransport.deviceMatchingProperties
     let bluetooth = matchers.first {
@@ -18,43 +18,46 @@ func scopedDeviceMatching() {
     }
     let usb = matchers.filter { $0[kIOHIDTransportKey as String] as? String == "USB" }
 
-    #expect(matchers.count == 6)
+    #expect(matchers.count == 7)
     #expect(bluetooth?[kIOHIDDeviceUsagePageKey as String] as? Int == 1)
     #expect(bluetooth?[kIOHIDDeviceUsageKey as String] as? Int == 6)
-    #expect(Set(usb.compactMap { $0[kIOHIDProductIDKey as String] as? Int }) == [0x102B, 0x3255, 0x3246, 0x3266, 0x32F5])
+    #expect(Set(usb.compactMap { $0[kIOHIDProductIDKey as String] as? Int }) == [0x1028, 0x102B, 0x3255, 0x3246, 0x3266, 0x32F5])
     #expect(usb.allSatisfy { $0[kIOHIDVendorIDKey as String] as? Int == 0x19F5 })
-    let air65V3 = usb.first { $0[kIOHIDProductIDKey as String] as? Int == 0x102B }
-    #expect(air65V3?[kIOHIDDeviceUsagePageKey as String] as? Int == 1)
-    #expect(air65V3?[kIOHIDDeviceUsageKey as String] as? Int == 0)
-    #expect(air65V3?[kIOHIDMaxInputReportSizeKey as String] as? Int == 64)
-    #expect(air65V3?[kIOHIDMaxOutputReportSizeKey as String] as? Int == 64)
-    let rawHID = usb.filter { $0[kIOHIDProductIDKey as String] as? Int != 0x102B }
+    let airV3 = usb.filter { [0x1028, 0x102B].contains($0[kIOHIDProductIDKey as String] as? Int) }
+    #expect(airV3.count == 2)
+    #expect(airV3.allSatisfy { $0[kIOHIDDeviceUsagePageKey as String] as? Int == 1 })
+    #expect(airV3.allSatisfy { $0[kIOHIDDeviceUsageKey as String] as? Int == 0 })
+    #expect(airV3.allSatisfy { $0[kIOHIDMaxInputReportSizeKey as String] as? Int == 64 })
+    #expect(airV3.allSatisfy { $0[kIOHIDMaxOutputReportSizeKey as String] as? Int == 64 })
+    let rawHID = usb.filter { ![0x1028, 0x102B].contains($0[kIOHIDProductIDKey as String] as? Int) }
     #expect(rawHID.allSatisfy { $0[kIOHIDDeviceUsagePageKey as String] as? Int == 0xFF60 })
     #expect(rawHID.allSatisfy { $0[kIOHIDDeviceUsageKey as String] as? Int == 0x61 })
 }
 
-@Test("only the exact wired Air65 V3 official control interface is accepted")
-func compatibleAir65V3OfficialInterface() {
-    #expect(NuPhyHIDTransport.deviceProtocol(
-        productName: "Air65 V3",
-        transport: "USB",
-        vendorID: 0x19F5,
-        productID: 0x102B,
-        usagePage: 1,
-        usage: 0,
-        maxOutputReportSize: 64,
-        maxInputReportSize: 64
-    ) == .air65V3Official)
-    #expect(NuPhyHIDTransport.connectionTransport(
-        productName: "Air65 V3",
-        transport: "USB",
-        vendorID: 0x19F5,
-        productID: 0x102B,
-        usagePage: 1,
-        usage: 0,
-        maxOutputReportSize: 64,
-        maxInputReportSize: 64
-    ) == .usb)
+@Test("only exact wired Air V3 official control interfaces are accepted")
+func compatibleAirV3OfficialInterfaces() {
+    for (name, productID) in [("Air65 V3", 0x102B), ("Air75 V3", 0x1028)] {
+        #expect(NuPhyHIDTransport.deviceProtocol(
+            productName: name,
+            transport: "USB",
+            vendorID: 0x19F5,
+            productID: productID,
+            usagePage: 1,
+            usage: 0,
+            maxOutputReportSize: 64,
+            maxInputReportSize: 64
+        ) == .airV3Official)
+        #expect(NuPhyHIDTransport.connectionTransport(
+            productName: name,
+            transport: "USB",
+            vendorID: 0x19F5,
+            productID: productID,
+            usagePage: 1,
+            usage: 0,
+            maxOutputReportSize: 64,
+            maxInputReportSize: 64
+        ) == .usb)
+    }
 
     for mismatch in [
         (0x2620, 1, 0, 64),
@@ -74,14 +77,25 @@ func compatibleAir65V3OfficialInterface() {
     }
 
     #expect(NuPhyHIDTransport.deviceProtocol(
-        productName: "Air65 V3",
+        productName: "Air75 V3",
         transport: "USB",
         vendorID: 0x19F5,
-        productID: 0x102B,
+        productID: 0x1028,
         usagePage: 1,
         usage: 0,
         maxOutputReportSize: 64,
         maxInputReportSize: 63
+    ) == nil)
+
+    #expect(NuPhyHIDTransport.deviceProtocol(
+        productName: "Air65 V3",
+        transport: "USB",
+        vendorID: 0x19F5,
+        productID: 0x1028,
+        usagePage: 1,
+        usage: 0,
+        maxOutputReportSize: 64,
+        maxInputReportSize: 64
     ) == nil)
 }
 
@@ -170,6 +184,18 @@ func compatibleNuPhyV2USBInterfaces() {
         usage: 0x61,
         maxOutputReportSize: 31
     ) == nil)
+}
+
+@Test("Air V3 brightness maps percentages to each model's hardware range")
+func airV3BrightnessMapping() {
+    #expect(NuPhyHIDTransport.airV3HardwareBrightness(percent: 0, productID: 0x1028) == 0)
+    #expect(NuPhyHIDTransport.airV3HardwareBrightness(percent: 42, productID: 0x1028) == 42)
+    #expect(NuPhyHIDTransport.airV3HardwareBrightness(percent: 100, productID: 0x1028) == 100)
+
+    #expect(NuPhyHIDTransport.airV3HardwareBrightness(percent: 0, productID: 0x102B) == 0)
+    #expect(NuPhyHIDTransport.airV3HardwareBrightness(percent: 50, productID: 0x102B) == 12)
+    #expect(NuPhyHIDTransport.airV3HardwareBrightness(percent: 100, productID: 0x102B) == 24)
+    #expect(NuPhyHIDTransport.airV3HardwareBrightness(percent: 255, productID: 0x1028) == 100)
 }
 
 @Test("HID recovery backs off and stays bounded until a report succeeds")

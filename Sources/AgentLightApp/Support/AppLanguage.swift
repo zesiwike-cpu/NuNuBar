@@ -40,6 +40,7 @@ enum AppText {
     case idleBehavior
     case previewColor
     case effectStyle
+    case brightness
     case solidEffect
     case breatheEffect
     case blinkEffect
@@ -168,8 +169,8 @@ enum AppLanguage: String, CaseIterable, Identifiable {
         case (.english, .minutesUnit): "min"
         case (.simplifiedChinese, .timingHint): "工作中和需要确认会随新状态自动续期；待机持续到下一个任务。"
         case (.english, .timingHint): "Working and confirmation timers renew on new events. Idle lasts until the next task."
-        case (.simplifiedChinese, .usbColorHint): "颜色或灯效变更后会在键盘上预览 3 秒"
-        case (.english, .usbColorHint): "Changes preview on the keyboard for 3 seconds"
+        case (.simplifiedChinese, .usbColorHint): "停止调整颜色或亮度后会在键盘上预览 3 秒；灯效变更会立即预览"
+        case (.english, .usbColorHint): "Settled colors and brightness preview for 3 seconds; effects preview immediately"
         case (.simplifiedChinese, .restoreDefaults): "恢复默认"
         case (.english, .restoreDefaults): "Restore Defaults"
         case (.simplifiedChinese, .usbRequiredForCustomColors): "自定义颜色、灯效和待机显示需要兼容的 NuPhy 固件并通过 USB 有线连接；蓝牙继续使用固件默认灯光。"
@@ -180,6 +181,8 @@ enum AppLanguage: String, CaseIterable, Identifiable {
         case (.english, .previewColor): "Preview on Keyboard"
         case (.simplifiedChinese, .effectStyle): "灯效"
         case (.english, .effectStyle): "Effect"
+        case (.simplifiedChinese, .brightness): "亮度"
+        case (.english, .brightness): "Brightness"
         case (.simplifiedChinese, .solidEffect): "常亮"
         case (.english, .solidEffect): "Solid"
         case (.simplifiedChinese, .breatheEffect): "呼吸"

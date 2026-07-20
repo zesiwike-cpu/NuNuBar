@@ -34,6 +34,8 @@ public struct AgentLightRGBColor: Codable, Equatable, Sendable {
 }
 
 public struct AgentLightPalette: Codable, Equatable, Sendable {
+    public static let maximumBrightness: UInt8 = 100
+
     public static let `default` = AgentLightPalette(
         idle: AgentLightRGBColor(red: 0, green: 0, blue: 0),
         working: AgentLightRGBColor(red: 252, green: 84, blue: 0),
@@ -42,7 +44,11 @@ public struct AgentLightPalette: Codable, Equatable, Sendable {
         idleEffect: .solid,
         workingEffect: .breathe,
         waitingEffect: .blink,
-        completeEffect: .solid
+        completeEffect: .solid,
+        idleBrightness: maximumBrightness,
+        workingBrightness: maximumBrightness,
+        waitingBrightness: maximumBrightness,
+        completeBrightness: maximumBrightness
     )
 
     public var idle: AgentLightRGBColor
@@ -53,6 +59,10 @@ public struct AgentLightPalette: Codable, Equatable, Sendable {
     public var workingEffect: AgentLightEffect
     public var waitingEffect: AgentLightEffect
     public var completeEffect: AgentLightEffect
+    public var idleBrightness: UInt8
+    public var workingBrightness: UInt8
+    public var waitingBrightness: UInt8
+    public var completeBrightness: UInt8
 
     public init(
         idle: AgentLightRGBColor = AgentLightRGBColor(red: 0, green: 0, blue: 0),
@@ -62,7 +72,11 @@ public struct AgentLightPalette: Codable, Equatable, Sendable {
         idleEffect: AgentLightEffect = .solid,
         workingEffect: AgentLightEffect = .breathe,
         waitingEffect: AgentLightEffect = .blink,
-        completeEffect: AgentLightEffect = .solid
+        completeEffect: AgentLightEffect = .solid,
+        idleBrightness: UInt8 = Self.maximumBrightness,
+        workingBrightness: UInt8 = Self.maximumBrightness,
+        waitingBrightness: UInt8 = Self.maximumBrightness,
+        completeBrightness: UInt8 = Self.maximumBrightness
     ) {
         self.idle = idle
         self.working = working
@@ -72,6 +86,10 @@ public struct AgentLightPalette: Codable, Equatable, Sendable {
         self.workingEffect = workingEffect
         self.waitingEffect = waitingEffect
         self.completeEffect = completeEffect
+        self.idleBrightness = min(idleBrightness, Self.maximumBrightness)
+        self.workingBrightness = min(workingBrightness, Self.maximumBrightness)
+        self.waitingBrightness = min(waitingBrightness, Self.maximumBrightness)
+        self.completeBrightness = min(completeBrightness, Self.maximumBrightness)
     }
 
     public init(from decoder: Decoder) throws {
@@ -85,6 +103,22 @@ public struct AgentLightPalette: Codable, Equatable, Sendable {
         workingEffect = try values.decodeIfPresent(AgentLightEffect.self, forKey: .workingEffect) ?? defaults.workingEffect
         waitingEffect = try values.decodeIfPresent(AgentLightEffect.self, forKey: .waitingEffect) ?? defaults.waitingEffect
         completeEffect = try values.decodeIfPresent(AgentLightEffect.self, forKey: .completeEffect) ?? defaults.completeEffect
+        idleBrightness = min(
+            try values.decodeIfPresent(UInt8.self, forKey: .idleBrightness) ?? defaults.idleBrightness,
+            Self.maximumBrightness
+        )
+        workingBrightness = min(
+            try values.decodeIfPresent(UInt8.self, forKey: .workingBrightness) ?? defaults.workingBrightness,
+            Self.maximumBrightness
+        )
+        waitingBrightness = min(
+            try values.decodeIfPresent(UInt8.self, forKey: .waitingBrightness) ?? defaults.waitingBrightness,
+            Self.maximumBrightness
+        )
+        completeBrightness = min(
+            try values.decodeIfPresent(UInt8.self, forKey: .completeBrightness) ?? defaults.completeBrightness,
+            Self.maximumBrightness
+        )
     }
 
     public func color(for command: AgentLightCommand) -> AgentLightRGBColor {
@@ -123,6 +157,34 @@ public struct AgentLightPalette: Codable, Equatable, Sendable {
         }
     }
 
+    public func brightness(for command: AgentLightCommand) -> UInt8 {
+        switch command {
+        case .idle: idleBrightness
+        case .working: workingBrightness
+        case .waiting, .error: waitingBrightness
+        case .complete: completeBrightness
+        }
+    }
+
+    public func brightness(for role: AgentLightColorRole) -> UInt8 {
+        switch role {
+        case .idle: idleBrightness
+        case .working: workingBrightness
+        case .waiting: waitingBrightness
+        case .complete: completeBrightness
+        }
+    }
+
+    public func brightnessAdjustedColor(for command: AgentLightCommand) -> AgentLightRGBColor {
+        let color = color(for: command)
+        let percentage = Int(brightness(for: command))
+        return AgentLightRGBColor(
+            red: Self.scaled(color.red, percentage: percentage),
+            green: Self.scaled(color.green, percentage: percentage),
+            blue: Self.scaled(color.blue, percentage: percentage)
+        )
+    }
+
     public mutating func setColor(_ color: AgentLightRGBColor, for role: AgentLightColorRole) {
         switch role {
         case .idle: idle = color
@@ -139,6 +201,20 @@ public struct AgentLightPalette: Codable, Equatable, Sendable {
         case .waiting: waitingEffect = effect
         case .complete: completeEffect = effect
         }
+    }
+
+    public mutating func setBrightness(_ brightness: UInt8, for role: AgentLightColorRole) {
+        let normalized = min(brightness, Self.maximumBrightness)
+        switch role {
+        case .idle: idleBrightness = normalized
+        case .working: workingBrightness = normalized
+        case .waiting: waitingBrightness = normalized
+        case .complete: completeBrightness = normalized
+        }
+    }
+
+    private static func scaled(_ component: UInt8, percentage: Int) -> UInt8 {
+        UInt8((Int(component) * percentage + 50) / 100)
     }
 }
 

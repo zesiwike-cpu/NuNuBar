@@ -23,11 +23,15 @@ enum LightStripModel {
         effect: AgentLightEffect,
         time: TimeInterval,
         count: Int,
-        baseColor: AgentLightRGBColor
+        baseColor: AgentLightRGBColor,
+        brightnessPercent: UInt8 = AgentLightPalette.maximumBrightness
     ) -> [LightStripSample] {
         guard count > 0 else { return [] }
         let color = colorSample(baseColor)
-        let level = brightnessLevel(effect: effect, time: time)
+        let configuredBrightness = Double(
+            min(brightnessPercent, AgentLightPalette.maximumBrightness)
+        ) / Double(AgentLightPalette.maximumBrightness)
+        let level = brightnessLevel(effect: effect, time: time) * configuredBrightness
         let sample = LightStripSample(
             hue: color.hue,
             saturation: color.saturation,
@@ -87,6 +91,7 @@ struct LightStripPreview: View {
     let effect: AgentLightEffect
     let time: TimeInterval
     let baseColor: AgentLightRGBColor
+    var brightnessPercent = AgentLightPalette.maximumBrightness
     var size = CGSize(width: 10, height: 40)
 
     var body: some View {
@@ -116,7 +121,8 @@ struct LightStripPreview: View {
             effect: effect,
             time: time,
             count: 24,
-            baseColor: baseColor
+            baseColor: baseColor,
+            brightnessPercent: brightnessPercent
         )
         let stops = samples.enumerated().map { index, sample in
             Gradient.Stop(
@@ -132,7 +138,8 @@ struct LightStripPreview: View {
             effect: effect,
             time: time,
             count: 1,
-            baseColor: baseColor
+            baseColor: baseColor,
+            brightnessPercent: brightnessPercent
         ).first?.color ?? .clear
     }
 }
