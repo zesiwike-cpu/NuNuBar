@@ -172,6 +172,40 @@ struct OfficialKeyboardProfile: Equatable, Sendable {
     let vendorID: Int
     let productID: Int
     let productName: String
+    let minimumFirmwareVersion: OfficialFirmwareVersion?
+}
+
+struct OfficialFirmwareVersion: Equatable, Comparable, CustomStringConvertible, Sendable {
+    let major: Int
+    let minor: Int
+    let patch: Int
+    let build: Int
+
+    var description: String {
+        "\(major).\(minor).\(patch).\(build)"
+    }
+
+    init(major: Int, minor: Int, patch: Int, build: Int) {
+        self.major = major
+        self.minor = minor
+        self.patch = patch
+        self.build = build
+    }
+
+    init?(airV3Payload: [UInt8]) {
+        guard airV3Payload.count >= 5, airV3Payload[3] == 0xAA else { return nil }
+        self.init(
+            major: Int(airV3Payload[2]),
+            minor: Int(airV3Payload[1]),
+            patch: Int(airV3Payload[0]),
+            build: Int(airV3Payload[4])
+        )
+    }
+
+    static func < (lhs: Self, rhs: Self) -> Bool {
+        (lhs.major, lhs.minor, lhs.patch, lhs.build)
+            < (rhs.major, rhs.minor, rhs.patch, rhs.build)
+    }
 }
 
 enum SupportedOfficialNuPhyKeyboard {
@@ -181,7 +215,21 @@ enum SupportedOfficialNuPhyKeyboard {
             displayName: "NuPhy Air65 V3",
             vendorID: 0x19F5,
             productID: 0x102B,
-            productName: "Air65 V3"
+            productName: "Air65 V3",
+            minimumFirmwareVersion: nil
+        ),
+        OfficialKeyboardProfile(
+            modelIdentifier: "air75-v3",
+            displayName: "NuPhy Air75 V3",
+            vendorID: 0x19F5,
+            productID: 0x1028,
+            productName: "Air75 V3",
+            minimumFirmwareVersion: OfficialFirmwareVersion(
+                major: 1,
+                minor: 0,
+                patch: 14,
+                build: 6
+            )
         ),
     ]
 
@@ -220,6 +268,11 @@ enum KeyboardSetupTarget: Sendable {
     var usesOfficialFirmware: Bool {
         if case .officialFirmware = self { return true }
         return false
+    }
+
+    var minimumOfficialFirmwareVersion: OfficialFirmwareVersion? {
+        guard case .officialFirmware(let profile) = self else { return nil }
+        return profile.minimumFirmwareVersion
     }
 }
 

@@ -119,7 +119,7 @@ jobs:
             echo
             cat MACOS_NOTARIZATION_STATUS.txt
             echo
-            echo "Normal-user hardware verification currently covers Apple Silicon macOS with Air65 V3 or Air96 V2 ANSI only."
+            echo "Normal-user hardware verification currently covers Apple Silicon macOS with Air65 V3, Air75 V3, or Air96 V2 ANSI only."
             echo "Start with START_HERE.md and the read-only setupPlan before changing Hooks or firmware."
           } > RELEASE_NOTES.md
       - name: Create or update GitHub release

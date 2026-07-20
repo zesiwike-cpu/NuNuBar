@@ -8,6 +8,7 @@ func statusCommands() throws {
     #expect(try CommandLineRequest.parse(["complete"]) == .send(.complete))
     #expect(try CommandLineRequest.parse(["idle"]) == .send(.idle))
     #expect(try CommandLineRequest.parse(["demo"]) == .demo)
+    #expect(try CommandLineRequest.parse(["round-trip"]) == .roundTrip)
     #expect(try CommandLineRequest.parse(["recovery-test", "10"]) == .recoveryTest(10))
     #expect(try CommandLineRequest.parse(["soak-test", "60"]) == .soakTest(60))
     #expect(try CommandLineRequest.parse(["stress", "20"]) == .stress(20))

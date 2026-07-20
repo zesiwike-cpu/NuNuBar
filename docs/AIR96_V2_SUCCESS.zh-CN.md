@@ -1,6 +1,6 @@
 # Air96 V2 ANSI 已验证成功路线
 
-这是 NuNuBar 当前两条实机成功路线之一，只适用于通过 USB 连接 Apple Silicon
+这是 NuNuBar 当前三条实机成功路线之一，只适用于通过 USB 连接 Apple Silicon
 Mac 的准确型号 NuPhy Air96 V2 ANSI。
 
 ## 用户需要准备

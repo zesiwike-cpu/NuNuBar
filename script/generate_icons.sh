@@ -17,5 +17,9 @@ for size in 16 32 128 256 512; do
 done
 
 iconutil -c icns "$ICONSET_DIR" -o "$RESOURCE_DIR/NuNuBar.icns"
-sips -s format png "$ROOT_DIR/Design/NuphyBarMenuBarIcon.svg" \
-  --out "$RESOURCE_DIR/NuphyBarMenuBarIcon.png" >/dev/null
+
+MENU_BAR_ICON="$RESOURCE_DIR/NuNuBarMenuBarIcon.png"
+if [[ ! -f "$MENU_BAR_ICON" ]]; then
+  echo "missing menu bar icon: $MENU_BAR_ICON" >&2
+  exit 1
+fi

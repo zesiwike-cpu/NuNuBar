@@ -6,6 +6,8 @@ __pycache__/
 *.pyc
 .venv/
 .pytest_cache/
+.playwright-cli/
+.tmp-air75-manual*/
 work/
 outputs/
 firmware/**/build/

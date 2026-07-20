@@ -1,5 +1,8 @@
 public enum CommandLineRequest: Equatable, Sendable {
     case describe
+    case firmwareInfo
+    case lightState
+    case roundTrip
     case demo
     case recoveryTest(Int)
     case soakTest(Int)
@@ -13,6 +16,9 @@ public enum CommandLineRequest: Equatable, Sendable {
 
         switch command {
         case "describe" where arguments.count == 1: return .describe
+        case "firmware-info" where arguments.count == 1: return .firmwareInfo
+        case "light-state" where arguments.count == 1: return .lightState
+        case "round-trip" where arguments.count == 1: return .roundTrip
         case "demo" where arguments.count == 1: return .demo
         case "recovery-test" where arguments.count == 2:
             guard let iterations = Int(arguments[1]), iterations > 0 else {
@@ -73,7 +79,7 @@ public enum CommandLineError: Error, Equatable, CustomStringConvertible {
     public var description: String {
         switch self {
         case .missingCommand, .invalidCommand:
-            return "usage: agent-light describe | demo | recovery-test ITERATIONS | soak-test SECONDS | stress ITERATIONS | idle | working | waiting | complete | error | hook PROVIDER EVENT | event PROVIDER STATUS SESSION"
+            return "usage: agent-light describe | firmware-info | light-state | round-trip | demo | recovery-test ITERATIONS | soak-test SECONDS | stress ITERATIONS | idle | working | waiting | complete | error | hook PROVIDER EVENT | event PROVIDER STATUS SESSION"
         case .invalidProvider:
             return "provider must be codex, claude-code, opencode, grok-build, hermes, openclaw, or antigravity"
         }

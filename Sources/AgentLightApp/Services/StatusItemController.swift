@@ -419,7 +419,7 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSWindowDelegate {
 
     private var menuBarIcon: NSImage {
         guard let url = Bundle.main.url(
-            forResource: "NuphyBarMenuBarIcon",
+            forResource: "NuNuBarMenuBarIcon",
             withExtension: "png"
         ), let image = NSImage(contentsOf: url) else {
             return NSImage(systemSymbolName: "keyboard", accessibilityDescription: "NuNuBar")!

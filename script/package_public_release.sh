@@ -5,7 +5,7 @@ set -euo pipefail
 : "${NOTARY_PROFILE:?Set NOTARY_PROFILE to an xcrun notarytool keychain profile}"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_VERSION="${APP_VERSION:-0.13.1}"
+APP_VERSION="${APP_VERSION:-0.15.0}"
 DMG_PATH="$ROOT_DIR/dist/NuNuBar-$APP_VERSION-macOS-arm64.dmg"
 
 SIGN_IDENTITY="$DEVELOPER_ID_APPLICATION" \

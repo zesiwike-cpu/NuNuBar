@@ -14,8 +14,13 @@ func defaultLightPalette() {
     #expect(palette.workingEffect == .breathe)
     #expect(palette.waitingEffect == .blink)
     #expect(palette.completeEffect == .solid)
+    #expect(palette.idleBrightness == 100)
+    #expect(palette.workingBrightness == 100)
+    #expect(palette.waitingBrightness == 100)
+    #expect(palette.completeBrightness == 100)
     #expect(palette.color(for: .error) == palette.waiting)
     #expect(palette.effect(for: .error) == palette.waitingEffect)
+    #expect(palette.brightness(for: .error) == palette.waitingBrightness)
 }
 
 @Test("light settings persist in the shared application support file")
@@ -31,6 +36,8 @@ func persistedLightPalette() {
     palette.setColor(AgentLightRGBColor(red: 7, green: 8, blue: 9), for: .working)
     palette.setEffect(.blink, for: .idle)
     palette.setEffect(.solid, for: .working)
+    palette.setBrightness(42, for: .idle)
+    palette.setBrightness(67, for: .working)
     store.save(palette)
 
     #expect(store.load() == palette)
@@ -52,4 +59,24 @@ func colorOnlyPaletteMigration() throws {
     #expect(palette.workingEffect == .breathe)
     #expect(palette.waitingEffect == .blink)
     #expect(palette.completeEffect == .solid)
+    #expect(palette.idleBrightness == 100)
+    #expect(palette.workingBrightness == 100)
+    #expect(palette.waitingBrightness == 100)
+    #expect(palette.completeBrightness == 100)
+}
+
+@Test("brightness is clamped and scales legacy V2 colors")
+func normalizedAndAdjustedBrightness() {
+    var palette = AgentLightPalette.default
+    palette.setBrightness(50, for: .working)
+
+    #expect(palette.brightness(for: AgentLightColorRole.working) == 50)
+    #expect(palette.brightnessAdjustedColor(for: .working) == AgentLightRGBColor(
+        red: 126,
+        green: 42,
+        blue: 0
+    ))
+
+    palette.setBrightness(255, for: .working)
+    #expect(palette.brightness(for: AgentLightColorRole.working) == 100)
 }

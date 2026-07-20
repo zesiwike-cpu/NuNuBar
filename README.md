@@ -31,7 +31,7 @@ my physical confirmation before selecting a route. Explain and obtain separate
 approval for App installation, Hook changes, entering DFU, and firmware flash.
 ```
 
-Codex runs a read-only preflight and selects exactly one of the two verified
+Codex runs a read-only preflight and selects exactly one of the three verified
 macOS paths below. It must stop on every other host or keyboard, and must not
 infer a firmware model, approve Hook trust, enter DFU for the user, or flash
 without a separate confirmation.
@@ -43,23 +43,26 @@ software, edits Hooks, or flashes firmware.
 
 ## Start with a proven path
 
-NuNuBar has two hardware-verified normal-user paths:
+NuNuBar has three hardware-verified normal-user paths:
 
 1. Air65 V3 on Apple Silicon macOS over wired USB, using the official interface
    without a firmware flash. Codex status lighting and the optional right-knob
    task switch are physically verified.
-2. Air96 V2 ANSI on Apple Silicon macOS over wired USB. Existing firmware is
+2. Air75 V3 on Apple Silicon macOS over wired USB, using official firmware
+   `1.0.14.6` or later. NuNuBar detects older firmware and stops for a separately
+   approved NuPhyIO backup and official update.
+3. Air96 V2 ANSI on Apple Silicon macOS over wired USB. Existing firmware is
    tested first; the verified v7 firmware path is used only when that self-test
    fails.
 
 See [Verified setup paths](docs/VERIFIED_PATHS.md) for the decision matrix,
-exact Air65 V3 procedure, success checklist, and troubleshooting evidence.
+exact model procedures, success checklist, and troubleshooting evidence.
 
 ## Platform support
 
 | Host | Client | Transport | Normal-user status |
 |---|---|---|---|
-| macOS 14+, Apple Silicon | Native menu-bar app and guided setup | Wired Air65 official HID or Air96 V2 Raw HID | Hardware verified |
+| macOS 14+, Apple Silicon | Native menu-bar app and guided setup | Wired Air65/Air75 V3 official HID or Air96 V2 Raw HID | Hardware verified |
 
 Windows and Intel Mac code may remain in the repository for contributors, but
 neither is a hardware-verified normal-user path.
@@ -71,21 +74,29 @@ The normal-user flow supports only these exact models:
 | Model | USB VID:PID | Light area | Current USB firmware |
 |---|---|---|---|
 | Air65 V3 | `19F5:102B` | Side lights | Official firmware, no flash; automatic profile discovery, default orange/green/red, real Codex transitions, and `F23` right-knob task switching verified |
+| Air75 V3 | `19F5:1028` | Side lights | Official firmware `1.0.14.6` or later; official cyan test, NuNuBar states, and real Codex working-to-complete transition physically verified |
 | Air96 V2 ANSI | `19F5:3266` | Both side bars | Verified v7 path; self-test existing firmware before any flash |
 
 Air65 V3 uses the official firmware's 64-byte wired control interface. It does
 not enter DFU or modify keyboard firmware. Bluetooth remains available for
 ordinary typing, but Air65 V3 status lighting currently requires wired USB. See the
 [Air65 V3 verification record](docs/AIR65_V3_VERIFICATION.md) for exact hardware evidence and pending checks.
-On macOS, the [Air65 V3 key mapping editor](docs/AIR65_V3_KEY_MAPPING.md) can
-create device-scoped System and Codex actions from the clickable keyboard. It
-also maps the NuPhyIO `F21`/`F22`/`F23` knob inputs independently. The
-previously verified yellow `PGDN` to Fn/Globe route remains supported without
-migration.
+Air75 V3 uses the same class of official 64-byte wired interface with a
+model-specific `D6` side-light layout and a minimum official firmware version.
+See the [Air75 V3 verification record](docs/AIR75_V3_VERIFICATION.md).
+Users who want an always-on idle color must disable the keyboard's own Auto-sleep
+with a short `Fn + ]` press, then select a non-black solid idle color in NuNuBar.
+This official firmware control does not require HID polling.
+On macOS, the model-specific mapping editors for
+[Air65 V3](docs/AIR65_V3_KEY_MAPPING.md) and
+[Air75 V3](docs/AIR75_V3_KEY_MAPPING.md) create exact-device System and Codex
+actions from clickable physical layouts. Both expose independent NuPhyIO
+`F21`/`F22`/`F23` knob carriers. The previously verified Air65 yellow `PGDN`
+to Fn/Globe route remains supported without migration.
 
 > [!NOTE]
-> Status-light synchronization does **not** require Karabiner. Air65 V3 key and
-> knob mapping currently requires the official Karabiner-Elements for macOS.
+> Status-light synchronization does **not** require Karabiner. Air65/Air75 V3
+> key and knob mapping currently requires official Karabiner-Elements for macOS.
 > NuNuBar detects it and, only after confirmation, merges exact-device rules
 > into the user's Karabiner configuration. Without Karabiner, lighting still
 > works but these shortcut mappings do not.
@@ -114,12 +125,12 @@ or lighting zones do not imply compatibility.
 | Complete | Green `#00FF00` | Solid | 15 seconds |
 
 On USB firmware v3, each state can use a custom RGB color and one of solid,
-breathe, or blink. Air65 V3 official firmware supports solid and breathe;
+breathe, or blink. Air65/Air75 V3 official firmware supports solid and breathe;
 NuNuBar renders blink with 500 ms on/off frames and validates the keyboard ACK
 for every frame. The macOS app exposes these controls in its Light settings,
 along with completion/error durations and independent working/waiting stale
 timeouts. Changes are stored locally and take effect immediately.
-Both verified paths currently use USB. Bluetooth is not a verified status-light
+All verified paths currently use USB. Bluetooth is not a verified status-light
 transport.
 
 ## How it works

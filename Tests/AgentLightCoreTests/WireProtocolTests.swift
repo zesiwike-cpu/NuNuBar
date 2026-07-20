@@ -35,12 +35,13 @@ func usbStatusReportCarriesCustomSettings() {
         idleEffect: .blink,
         workingEffect: .solid,
         waitingEffect: .breathe,
-        completeEffect: .blink
+        completeEffect: .blink,
+        workingBrightness: 50
     )
 
     #expect(Array(USBStatusReportEncoder.encode(.idle, palette: palette)[7...9]) == [1, 2, 3])
     #expect(USBStatusReportEncoder.encode(.idle, palette: palette)[10] == AgentLightEffect.blink.wireValue)
-    #expect(Array(USBStatusReportEncoder.encode(.working, palette: palette)[7...9]) == [12, 34, 56])
+    #expect(Array(USBStatusReportEncoder.encode(.working, palette: palette)[7...9]) == [6, 17, 28])
     #expect(USBStatusReportEncoder.encode(.working, palette: palette)[10] == AgentLightEffect.solid.wireValue)
     #expect(Array(USBStatusReportEncoder.encode(.waiting, palette: palette)[7...9]) == [78, 90, 123])
     #expect(USBStatusReportEncoder.encode(.waiting, palette: palette)[10] == AgentLightEffect.breathe.wireValue)

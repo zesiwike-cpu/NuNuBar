@@ -29,6 +29,14 @@ CATALOG = {
         "platforms": ["macOS"],
         "route": "official-wired-control-no-flash",
     },
+    0x1028: {
+        "model": "NuPhy Air75 V3",
+        "layout": "ANSI",
+        "status": "verified",
+        "platforms": ["macOS"],
+        "route": "official-wired-control-min-1.0.14.6",
+        "minimumFirmwareVersion": "1.0.14.6",
+    },
     0x3255: {
         "model": "NuPhy Air60 V2 ANSI",
         "layout": "ANSI",
@@ -245,9 +253,10 @@ def classify_devices(
             )
             continue
 
-        if product_id == 0x102B:
+        if product_id in {0x102B, 0x1028}:
+            expected_product = "air65 v3" if product_id == 0x102B else "air75 v3"
             ready = host_name == "macOS" and any(
-                str(interface.get("product", "")).casefold() == "air65 v3"
+                str(interface.get("product", "")).casefold() == expected_product
                 and str(interface.get("transport", "")).casefold() == "usb"
                 and interface.get("usagePage") == 0x0001
                 and interface.get("usage") == 0x0000
@@ -276,7 +285,8 @@ def classify_devices(
                 "controlInterfaceReady": ready,
                 "route": catalog["route"] if host_name in catalog["platforms"] else "stop-unsupported-platform",
                 "physicalConfirmationRequired": True,
-                "firmwareCompatibilityKnown": product_id == 0x102B,
+                "firmwareCompatibilityKnown": product_id in {0x102B, 0x1028},
+                "minimumFirmwareVersion": catalog.get("minimumFirmwareVersion"),
                 "interfaces": hid,
             }
         )
@@ -466,7 +476,7 @@ def build_setup_plan(report: dict[str, Any]) -> dict[str, Any]:
     host = report.get("host") or {}
     if host.get("os") != "macOS" or host.get("architecture") not in {"arm64", "aarch64"}:
         plan["summary"] = (
-            "The two hardware-verified paths currently require Apple Silicon macOS. "
+            "The three hardware-verified paths currently require Apple Silicon macOS. "
             "Windows and other hosts are not normal-user success paths yet."
         )
         return plan
@@ -474,11 +484,11 @@ def build_setup_plan(report: dict[str, Any]) -> dict[str, Any]:
     candidates = [
         keyboard
         for keyboard in report.get("keyboards", [])
-        if keyboard.get("productId") in {"102B", "3266"}
+        if keyboard.get("productId") in {"102B", "1028", "3266"}
     ]
     if len(candidates) != 1:
         plan["summary"] = (
-            "Connect exactly one Air65 V3 or Air96 V2 ANSI by USB, then run preflight again."
+            "Connect exactly one Air65 V3, Air75 V3, or Air96 V2 ANSI by USB, then run preflight again."
         )
         plan["nextAction"] = "connect-one-verified-keyboard-by-usb"
         return plan
@@ -524,6 +534,46 @@ def build_setup_plan(report: dict[str, Any]) -> dict[str, Any]:
             plan["nextAction"] = "connect-and-approve-codex-hooks"
         else:
             plan["nextAction"] = "run-light-self-test-and-real-codex-acceptance"
+        return plan
+
+    if keyboard["productId"] == "1028":
+        plan.update(
+            {
+                "eligible": True,
+                "path": "air75-v3-macos-wired-1.0.14.6",
+                "status": "hardware-verified",
+                "summary": (
+                    "Use the Air75 V3 official wired control path with official firmware 1.0.14.6 or later."
+                ),
+                "required": [
+                    "Apple Silicon Mac with macOS 14 or later",
+                    "Printed model confirmed as Air75 V3",
+                    "USB wired mode and a data-capable cable",
+                    "Official firmware 1.0.14.6 or later, checked by NuNuBar",
+                    "NuNuBar App running from /Applications",
+                    "Four reviewed and approved Codex Hooks",
+                ],
+                "conditionalFirmwareRequirements": [
+                    "If firmware is older than 1.0.14.6, export a NuPhyIO backup and obtain separate approval for the official update",
+                    "Use only drive.nuphy.io and never flash a V2 NuNuBar image to Air75 V3",
+                ],
+                "approvalGates": common_approvals + [
+                    "update-official-air75-v3-firmware-only-if-below-1.0.14.6",
+                ],
+                "limitations": [
+                    "Air75 V3 status lighting is USB-only; Bluetooth is typing-only",
+                    "The verified route uses official firmware and never uses the V2 DFU catalog",
+                ],
+            }
+        )
+        if not keyboard.get("controlInterfaceReady"):
+            plan["nextAction"] = "switch-air75-to-wired-usb-and-reconnect"
+        elif not installation.get("installed"):
+            plan["nextAction"] = "install-nunubar-app"
+        elif not installation.get("codexHooksPresent"):
+            plan["nextAction"] = "connect-and-approve-codex-hooks"
+        else:
+            plan["nextAction"] = "verify-air75-firmware-and-run-real-codex-acceptance"
         return plan
 
     plan.update(

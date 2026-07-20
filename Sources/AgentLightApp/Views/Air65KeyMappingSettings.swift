@@ -1,16 +1,16 @@
 import AppKit
 import SwiftUI
 
-struct Air65KeyMappingSettings: View {
+struct NuPhyKeyMappingSettings: View {
     private enum PendingChange {
         case save(Air65KeyMapping)
         case remove(Air65KeyMapping)
     }
 
     @Environment(\.appLanguage) private var language
-    @State private var selectedKeyID = Air65KeyboardLayout.yellowShortcutKeyID
-    @State private var selectedKnobControlID = Air65KeyboardLayout.knobPressKeyID
-    @State private var selectedAction = Air65MappingAction.fnGlobe
+    @State private var selectedKeyID: String
+    @State private var selectedKnobControlID: String
+    @State private var selectedAction: Air65MappingAction
     @State private var mappings: [String: Air65KeyMapping] = [:]
     @State private var status = Air65FnShortcutStatus.checking
     @State private var proposedBackupURL: URL?
@@ -23,12 +23,22 @@ struct Air65KeyMappingSettings: View {
     @State private var observedInput: Air65ObservedInput?
     @State private var inputTestTimedOut = false
 
-    private let service = Air65FnShortcutService()
+    let profile: NuPhyKeyboardMappingProfile
+    private let service: Air65FnShortcutService
+
+    init(profile: NuPhyKeyboardMappingProfile) {
+        self.profile = profile
+        service = Air65FnShortcutService(profile: profile)
+        _selectedKeyID = State(initialValue: profile.initialKeyID)
+        _selectedKnobControlID = State(initialValue: Air65KeyboardLayout.knobPressKeyID)
+        _selectedAction = State(initialValue: .fnGlobe)
+    }
 
     var body: some View {
         Group {
             SettingsGroup(title: language == .simplifiedChinese ? "按键映射" : "Key Mapping") {
-                Air65KeyboardLayoutView(
+                NuPhyKeyboardLayoutView(
+                    profile: profile,
                     selection: $selectedKeyID,
                     mappedKeyIDs: mappedPhysicalKeyIDs
                 )
@@ -74,7 +84,7 @@ struct Air65KeyMappingSettings: View {
                     language == .simplifiedChinese ? "旋钮动作" : "Knob Control",
                     selection: $selectedKnobControlID
                 ) {
-                    ForEach(Air65KeyboardLayout.knobControls) { control in
+                    ForEach(profile.knobControls) { control in
                         Text(knobControlTitle(control.id)).tag(control.id)
                     }
                 }
@@ -139,22 +149,26 @@ struct Air65KeyMappingSettings: View {
                     .foregroundStyle(NuphyBarTheme.tertiaryText)
                     .help(language == .simplifiedChinese ? "当前输入事件" : "Current input event")
 
-                Button {
-                    startInputTest()
-                } label: {
-                    Image(systemName: isInputTestRunning ? "waveform" : "waveform.path.ecg")
+                if isFunctionCarrier(currentMapping?.inputKeyCode ?? defaultInput) {
+                    Button {
+                        startInputTest()
+                    } label: {
+                        Image(systemName: isInputTestRunning ? "waveform" : "waveform.path.ecg")
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(isInputTestRunning)
+                    .help(language == .simplifiedChinese ? "实测当前输入事件" : "Test Current Input")
                 }
-                .buttonStyle(.borderless)
-                .disabled(isInputTestRunning)
-                .help(language == .simplifiedChinese ? "实测当前输入事件" : "Test Current Input")
 
                 Button {
-                    NSWorkspace.shared.open(Air65FnShortcutService.nuphyIOURL)
+                    NSWorkspace.shared.open(Air65FnShortcutService.nuphyIOURL(
+                        languageCode: language == .simplifiedChinese ? "zh-CN" : "en-US"
+                    ))
                 } label: {
                     Image(systemName: "keyboard.badge.ellipsis")
                 }
                 .buttonStyle(.borderless)
-                .help(language == .simplifiedChinese ? "打开键盘层设置" : "Open Keyboard-Level Settings")
+                .help(language == .simplifiedChinese ? "打开 NuPhyIO 2.0" : "Open NuPhyIO 2.0")
 
                 if let currentMapping {
                     Button(role: .destructive) {
@@ -235,12 +249,12 @@ struct Air65KeyMappingSettings: View {
     }
 
     private var selectedKey: Air65KeyboardKey? {
-        Air65KeyboardLayout.key(id: selectedKeyID)
+        profile.key(id: selectedKeyID)
     }
 
     private var activeKey: Air65KeyboardKey? {
         if selectedKeyID == Air65KeyboardLayout.knobKeyID {
-            return Air65KeyboardLayout.key(id: selectedKnobControlID)
+            return profile.key(id: selectedKnobControlID)
         }
         return selectedKey
     }
@@ -255,7 +269,7 @@ struct Air65KeyMappingSettings: View {
 
     private var mappedPhysicalKeyIDs: Set<String> {
         var result = Set(mappings.keys)
-        if Air65KeyboardLayout.knobControls.contains(where: { mappings[$0.id] != nil }) {
+        if profile.knobControls.contains(where: { mappings[$0.id] != nil }) {
             result.insert(Air65KeyboardLayout.knobKeyID)
         }
         return result
@@ -345,14 +359,20 @@ struct Air65KeyMappingSettings: View {
     }
 
     private func keyDisplayName(_ keyID: String) -> String {
-        if Air65KeyboardLayout.knobControls.contains(where: { $0.id == keyID }) {
+        if profile.knobControls.contains(where: { $0.id == keyID }) {
             return "KNOB · \(knobControlTitle(keyID))"
         }
-        return Air65KeyboardLayout.key(id: keyID)?.legend ?? keyID
+        return profile.key(id: keyID)?.legend ?? keyID
     }
 
     private func inputEventText(_ input: String) -> String {
         language == .simplifiedChinese ? "输入：\(input.uppercased())" : "Input: \(input.uppercased())"
+    }
+
+    private func isFunctionCarrier(_ input: String) -> Bool {
+        let value = input.lowercased()
+        guard value.first == "f", let number = Int(value.dropFirst()) else { return false }
+        return (1...35).contains(number)
     }
 
     private func startInputTest() {
@@ -506,5 +526,11 @@ struct Air65KeyMappingSettings: View {
         }
         self.pendingChange = nil
         refresh()
+    }
+}
+
+struct Air65KeyMappingSettings: View {
+    var body: some View {
+        NuPhyKeyMappingSettings(profile: .air65V3)
     }
 }

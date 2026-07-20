@@ -13,8 +13,9 @@ Follow AGENTS.md, START_HERE.md, docs/CODEX_SETUP.md, and
 docs/VERIFIED_PATHS.md exactly. First run python3 script/preflight.py --json and
 report setupPlan.path, required, conditionalFirmwareRequirements, approvalGates,
 and nextAction. Then use my physical confirmation of the exact model and ANSI
-layout. setupPlan.path must be air65-v3-macos-wired or
-air96-v2-ansi-macos-v7; otherwise stop and explain. Do not enter DFU,
+layout. setupPlan.path must be air65-v3-macos-wired,
+air75-v3-macos-wired-1.0.14.6, or air96-v2-ansi-macos-v7; otherwise stop and
+explain. Do not enter DFU,
 flash firmware, replace an existing app or configuration, or write Codex Hooks
 until you have explained that specific action and received a separate
 confirmation for it. Preserve unrelated configuration and never choose between
@@ -43,14 +44,17 @@ Both paths require:
 - confirmation that the physical layout is ANSI;
 - a reliable USB data cable connected directly to the computer.
 
-Air65 V3 needs no VIA backup, recovery image, or firmware material. Air96 V2
+Air65 V3 needs no VIA backup, recovery image, or firmware material. Air75 V3
+uses official firmware `1.0.14.6` or later; an older version requires a
+NuPhyIO export and separate approval before the official update. Air96 V2
 must also test its existing firmware first. Prepare a VIA JSON backup and the
 exact official recovery image only after that self-test fails. Keep both outside
 the repository; never commit them or upload them to a public issue.
 
-Air65 V3 status lighting does not require Karabiner. Its optional key and knob
-mapping editor currently uses official Karabiner-Elements to execute exact-device
-rules. Follow [`AIR65_V3_KEY_MAPPING.md`](AIR65_V3_KEY_MAPPING.md); installing
+Air65/Air75 V3 status lighting does not require Karabiner. Their optional model-
+specific key and knob mapping editors use official Karabiner-Elements to execute
+exact-device rules. Follow [`AIR65_V3_KEY_MAPPING.md`](AIR65_V3_KEY_MAPPING.md)
+or [`AIR75_V3_KEY_MAPPING.md`](AIR75_V3_KEY_MAPPING.md); installing
 Karabiner and writing `~/.config/karabiner/karabiner.json` each require a visible
 user decision. The yellow-key Fn/Globe route remains documented separately in
 [`AIR65_V3_FN_SHORTCUT.md`](AIR65_V3_FN_SHORTCUT.md).
@@ -60,6 +64,7 @@ user decision. The yellow-key Fn/Globe route remains documented separately in
 | Model | USB VID:PID | Current firmware status | Lighting zone |
 | --- | --- | --- | --- |
 | Air65 V3 | `19F5:102B` | Official firmware; automatic profile discovery, default orange/green/red, and real Codex transitions verified | Side lights |
+| Air75 V3 | `19F5:1028` | Official firmware `1.0.14.6` or later; model-specific official wired protocol verified | Side lights |
 | Air96 V2 ANSI | `19F5:3266` | Hardware-verified v7 path; self-test first | Two side bars |
 
 These are the only normal-user paths. Air60 V2, Air75 V2, Halo75 V2, Windows,
@@ -112,8 +117,8 @@ happens to pass.
 
 After installation, launch NuNuBar and connect the keyboard by USB. V2 models
 require USB Raw HID and matching NuNuBar firmware for custom RGB and effects;
-Air65 V3 uses its official wired control interface; Bluetooth typing does not
-provide Air65 V3 status lighting in the current release. Connecting
+Air65/Air75 V3 use their official wired control interfaces; Bluetooth typing
+does not provide V3 side-light status in the current release. Connecting
 Codex is a separate configuration change: NuNuBar may propose scoped Hook
 entries, but Codex must show the affected configuration and obtain approval
 before writing it. The user must still approve Hooks in Codex Settings.
@@ -147,9 +152,12 @@ must not be used to claim a successful setup.
 
 ## Firmware flow
 
-Firmware is needed only for an exact Air96 V2 ANSI after its existing-firmware
-self-test fails. Air65 V3 already has an official interface and must never
-receive a V2 image. Read [`AIR96_V2_SUCCESS.md`](AIR96_V2_SUCCESS.md), then use
+Bundled firmware is needed only for an exact Air96 V2 ANSI after its
+existing-firmware self-test fails. Air65/Air75 V3 already have official
+interfaces and must never receive a V2 image. Air75 V3 below `1.0.14.6` uses
+only the separately approved NuPhyIO official update described in
+[`AIR75_V3_VERIFICATION.md`](AIR75_V3_VERIFICATION.md). For Air96, read
+[`AIR96_V2_SUCCESS.md`](AIR96_V2_SUCCESS.md), then use
 this sequence:
 
 1. Detect application-mode USB VID/PID and compare it with the printed model.
@@ -172,6 +180,6 @@ missing, stop without flashing.
 ## Status defaults
 
 The default palette is idle off, working orange breathe, waiting/error red
-blink, and complete green solid. Air96 V2 renders effects in firmware; Air65 V3
-uses the official control interface and the App renders its blink effect. Both
+blink, and complete green solid. Air96 V2 renders effects in firmware;
+Air65/Air75 V3 use official control interfaces and the App renders blink. All
 verified paths use USB. See `docs/NBAR_PROTOCOL.md` for the byte-level contract.

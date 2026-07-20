@@ -20,6 +20,8 @@ final class AppModel {
     var settingsSection: SettingsSection = .agents
     var keyboardError: String?
     var air65CurrentMode: UInt8?
+    var airV3FirmwareVersion: OfficialFirmwareVersion?
+    var airV3FirmwareError: String?
     var isKeyboardSelfTestRunning = false
     var hasCompletedKeyboardSelfTest = false
     var integrationError: String?
@@ -38,6 +40,7 @@ final class AppModel {
     @ObservationIgnored private var agentFallbackTask: Task<Void, Never>?
     @ObservationIgnored private var keyboardConnectionTask: Task<Void, Never>?
     @ObservationIgnored private var integrationNoticeTask: Task<Void, Never>?
+    @ObservationIgnored private var lightAdjustmentPreviewTask: Task<Void, Never>?
     @ObservationIgnored private var lightPreviewTask: Task<Void, Never>?
     @ObservationIgnored private var systemWakeMonitor: SystemWakeMonitor?
     @ObservationIgnored private var isDeliveryReady = false
@@ -66,6 +69,8 @@ final class AppModel {
             keyboardModel = nil
             keyboardTransport = nil
             keyboardError = nil
+            airV3FirmwareVersion = nil
+            airV3FirmwareError = nil
         }
 
         Task {
@@ -142,7 +147,7 @@ final class AppModel {
         guard lightPalette.color(for: role) != color else { return }
         lightPalette.setColor(color, for: role)
         paletteStore.save(lightPalette)
-        previewLight(role)
+        scheduleLightAdjustmentPreview(role)
     }
 
     func updateLightEffect(_ effect: AgentLightEffect, for role: AgentLightColorRole) {
@@ -150,6 +155,14 @@ final class AppModel {
         lightPalette.setEffect(effect, for: role)
         paletteStore.save(lightPalette)
         previewLight(role)
+    }
+
+    func updateLightBrightness(_ brightness: UInt8, for role: AgentLightColorRole) {
+        let normalized = min(brightness, AgentLightPalette.maximumBrightness)
+        guard lightPalette.brightness(for: role) != normalized else { return }
+        lightPalette.setBrightness(normalized, for: role)
+        paletteStore.save(lightPalette)
+        scheduleLightAdjustmentPreview(role)
     }
 
     func updateCompletionDuration(seconds: Int64) {
@@ -190,6 +203,7 @@ final class AppModel {
         stateTiming = .default
         paletteStore.reset()
         timingStore.reset()
+        cancelPendingLightAdjustmentPreview()
         lightPreviewTask?.cancel()
         lightPreviewTask = nil
         lightPreviewCommand = nil
@@ -205,6 +219,7 @@ final class AppModel {
     func applyDefaultLightPreset() {
         lightPalette = .default
         paletteStore.save(lightPalette)
+        cancelPendingLightAdjustmentPreview()
         lightPreviewTask?.cancel()
         lightPreviewTask = nil
         lightPreviewCommand = nil
@@ -217,6 +232,7 @@ final class AppModel {
 
     func previewLight(_ role: AgentLightColorRole) {
         guard keyboardTransport == .usb else { return }
+        cancelPendingLightAdjustmentPreview()
         let command = role.command
         lightPreviewTask?.cancel()
         lightPreviewCommand = command
@@ -241,6 +257,7 @@ final class AppModel {
     func runKeyboardSelfTest() -> Bool {
         guard canRunKeyboardSelfTest else { return false }
 
+        cancelPendingLightAdjustmentPreview()
         lightPreviewTask?.cancel()
         lightPreviewTask = nil
         lightPreviewCommand = nil
@@ -354,6 +371,8 @@ final class AppModel {
             keyboardModel = nil
             keyboardTransport = nil
             air65CurrentMode = nil
+            airV3FirmwareVersion = nil
+            airV3FirmwareError = nil
             hasCompletedKeyboardSelfTest = false
             keyboardError = NuPhyHIDError.deviceNotConnected.localizedDescription
 
@@ -363,6 +382,8 @@ final class AppModel {
             isConnected = true
             isDeliveryReady = false
             air65CurrentMode = nil
+            airV3FirmwareVersion = nil
+            airV3FirmwareError = nil
             hasCompletedKeyboardSelfTest = false
             keyboardError = error.localizedDescription
 
@@ -372,6 +393,8 @@ final class AppModel {
             isConnected = true
             isDeliveryReady = false
             air65CurrentMode = nil
+            airV3FirmwareVersion = nil
+            airV3FirmwareError = nil
             hasCompletedKeyboardSelfTest = false
             keyboardError = nil
 
@@ -389,13 +412,18 @@ final class AppModel {
                 hidLogger.info("NuPhy keyboard HID session is ready over \(transport.rawValue, privacy: .public)")
                 applyAgentStateIfChanged()
             }
-            if productName.caseInsensitiveCompare("Air65 V3") == .orderedSame {
+            if let profile = SupportedOfficialNuPhyKeyboard.models.first(where: {
+                productName.caseInsensitiveCompare($0.productName) == .orderedSame
+            }) {
                 Task { [weak self] in
                     guard let self else { return }
                     air65CurrentMode = await keyboard.diagnostics().air65CurrentMode
+                    await readOfficialFirmwareVersion(for: profile)
                 }
             } else {
                 air65CurrentMode = nil
+                airV3FirmwareVersion = nil
+                airV3FirmwareError = nil
             }
 
         case .unavailable(let error):
@@ -404,8 +432,36 @@ final class AppModel {
             keyboardModel = nil
             keyboardTransport = nil
             air65CurrentMode = nil
+            airV3FirmwareVersion = nil
+            airV3FirmwareError = nil
             hasCompletedKeyboardSelfTest = false
             keyboardError = error == .permissionDenied ? nil : error.localizedDescription
+        }
+    }
+
+    private func readOfficialFirmwareVersion(for profile: OfficialKeyboardProfile) async {
+        guard profile.minimumFirmwareVersion != nil else {
+            airV3FirmwareVersion = nil
+            airV3FirmwareError = nil
+            return
+        }
+
+        do {
+            let payload = try await keyboard.readAirV3FirmwareInfo()
+            guard let version = OfficialFirmwareVersion(airV3Payload: payload) else {
+                throw NuPhyHIDError.protocolFailed("unrecognized Air V3 firmware version")
+            }
+            guard keyboardModel?.caseInsensitiveCompare(profile.productName) == .orderedSame else {
+                return
+            }
+            airV3FirmwareVersion = version
+            airV3FirmwareError = nil
+        } catch {
+            guard keyboardModel?.caseInsensitiveCompare(profile.productName) == .orderedSame else {
+                return
+            }
+            airV3FirmwareVersion = nil
+            airV3FirmwareError = "无法读取官方固件版本，请重新检测键盘。"
         }
     }
 
@@ -456,17 +512,38 @@ final class AppModel {
             )
             let color = palette.color(for: command)
             let effect = palette.effect(for: command)
+            let brightness = palette.brightness(for: command)
             hidLogger.info(
-                "Delivered \(String(describing: command), privacy: .public) color rgb(\(color.red),\(color.green),\(color.blue)) effect \(effect.rawValue, privacy: .public) over NuPhy HID"
+                "Delivered \(String(describing: command), privacy: .public) color rgb(\(color.red),\(color.green),\(color.blue)) effect \(effect.rawValue, privacy: .public) brightness \(brightness)% over NuPhy HID"
             )
         }
     }
 
     private func handleAgentStateChange() {
+        cancelPendingLightAdjustmentPreview()
         lightPreviewTask?.cancel()
         lightPreviewTask = nil
         lightPreviewCommand = nil
         applyAgentStateIfChanged()
+    }
+
+    private func scheduleLightAdjustmentPreview(_ role: AgentLightColorRole) {
+        lightAdjustmentPreviewTask?.cancel()
+        lightAdjustmentPreviewTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(150))
+            } catch {
+                return
+            }
+            guard let self, !Task.isCancelled else { return }
+            lightAdjustmentPreviewTask = nil
+            previewLight(role)
+        }
+    }
+
+    private func cancelPendingLightAdjustmentPreview() {
+        lightAdjustmentPreviewTask?.cancel()
+        lightAdjustmentPreviewTask = nil
     }
 
     private func scheduleAgentExpiration(_ expiration: Int64?, now: Int64) {

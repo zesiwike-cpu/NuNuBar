@@ -120,6 +120,126 @@ func air65V3StatusReports() throws {
     #expect(blinkOff[1][8] == 0 ^ key)
 }
 
+@Test("Air75 V3 uses the official side-light modes and custom RGB flag")
+func air75V3StatusReports() throws {
+    let key: UInt8 = 0x65
+    let solid = try Air65V3ProtocolEncoder.statusReports(
+        .working,
+        sessionKey: key,
+        currentMode: 0,
+        brightness: 100,
+        effectOverride: .solid,
+        sideLightModes: .air75V3
+    )
+    let breathe = try Air65V3ProtocolEncoder.statusReports(
+        .working,
+        sessionKey: key,
+        currentMode: 0,
+        brightness: 100,
+        effectOverride: .breathe,
+        sideLightModes: .air75V3
+    )
+
+    #expect(solid.count == 2)
+    #expect(solid[0][4] == 8 ^ key)
+    #expect(solid[0][5] == 9 ^ key)
+    #expect(solid[0][8] == 2 ^ key)
+    #expect(breathe[0][8] == 3 ^ key)
+    #expect(solid[0][9] == 100 ^ key)
+    #expect(solid[0][10] == 2 ^ key)
+    #expect(solid[0][11] == 0 ^ key)
+    #expect(solid[0][12] == 0 ^ key)
+    #expect(solid[1][5] == 10 ^ key)
+    #expect(solid[1][8] == 100 ^ key)
+}
+
+@Test("Air V3 reads the official 17-byte light state")
+func airV3LightState() throws {
+    let key: UInt8 = 0x65
+    let mode: UInt8 = 1
+    let request = Air65V3ProtocolEncoder.lightStateRequest(
+        sessionKey: key,
+        currentMode: mode
+    )
+    #expect(Array(request[0...2]) == [0x55, 0xD5, 0])
+    #expect(request[4] == 17 ^ key)
+    #expect(request[7] == mode ^ key)
+
+    let expected = Array(UInt8(0)..<UInt8(17))
+    var response = [UInt8](repeating: 0, count: 64)
+    response[0] = 0xAA
+    response[1] = 0xD5
+    response[4] = 17 ^ key
+    response[5] = key
+    response[6] = key
+    response[7] = mode ^ key
+    for (index, byte) in expected.enumerated() {
+        response[8 + index] = byte ^ key
+    }
+    response[3] = Air65V3ProtocolEncoder.checksum(response)
+
+    #expect(try Air65V3ProtocolEncoder.lightState(
+        from: response,
+        sessionKey: key,
+        currentMode: mode
+    ) == expected)
+}
+
+@Test("Air75 V3 preflight reads app definition size and both mode-name blocks")
+func air75V3AppDefinitionPreflight() throws {
+    let key: UInt8 = 0x65
+    let sizeRequest = Air65V3ProtocolEncoder.appDefineSizeRequest(sessionKey: key)
+    #expect(Array(sizeRequest[0...2]) == [0x55, 0xFA, 0])
+    #expect(sizeRequest[4] == 10 ^ key)
+    #expect(sizeRequest[5] == key)
+    #expect(sizeRequest[6] == key)
+    #expect(sizeRequest[7] == key)
+
+    var sizeResponse = [UInt8](repeating: 0, count: 64)
+    sizeResponse[0] = 0xAA
+    sizeResponse[1] = 0xFA
+    sizeResponse[4] = 10 ^ key
+    sizeResponse[5] = key
+    sizeResponse[6] = key
+    sizeResponse[7] = key
+    sizeResponse[8] = 0x01 ^ key
+    sizeResponse[9] = 0x00 ^ key
+    sizeResponse[3] = Air65V3ProtocolEncoder.checksum(sizeResponse)
+    #expect(try Air65V3ProtocolEncoder.appDefineSize(
+        from: sizeResponse,
+        sessionKey: key
+    ) == 256)
+
+    for offset: UInt16 in [0, 56] {
+        let request = try Air65V3ProtocolEncoder.appDefineRequest(
+            offset: offset,
+            sessionKey: key
+        )
+        #expect(Array(request[0...2]) == [0x55, 0xFB, 0])
+        #expect(request[4] == 56 ^ key)
+        #expect(request[5] == UInt8(truncatingIfNeeded: offset) ^ key)
+        #expect(request[6] == UInt8(truncatingIfNeeded: offset >> 8) ^ key)
+
+        let expected = [UInt8](repeating: UInt8(offset), count: 56)
+        var response = [UInt8](repeating: 0, count: 64)
+        response[0] = 0xAA
+        response[1] = 0xFB
+        response[4] = 56 ^ key
+        response[5] = UInt8(truncatingIfNeeded: offset) ^ key
+        response[6] = UInt8(truncatingIfNeeded: offset >> 8) ^ key
+        response[7] = key
+        for (index, byte) in expected.enumerated() {
+            response[8 + index] = byte ^ key
+        }
+        response[3] = Air65V3ProtocolEncoder.checksum(response)
+        #expect(try Air65V3ProtocolEncoder.appDefine(
+            from: response,
+            offset: offset,
+            sessionKey: key
+        ) == expected)
+    }
+}
+
 @Test("Air65 V3 rejects malformed GetBase responses")
 func air65V3GetBaseValidation() throws {
     let key: UInt8 = 0x65

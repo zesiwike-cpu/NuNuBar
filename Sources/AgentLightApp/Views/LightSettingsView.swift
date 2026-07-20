@@ -72,10 +72,10 @@ struct LightSettingsView: View {
 
             if model.keyboardTransport != .usb {
                 SettingsNotice(text: language.text(.usbRequiredForCustomColors))
-            } else if isAir65V3Connected {
+            } else if let officialAirV3ModelName {
                 SettingsNotice(text: language == .simplifiedChinese
-                    ? "Air65 V3 使用官方常亮和呼吸；闪烁由 NuNuBar 在有线连接下以 500ms 开关帧实现。"
-                    : "Air65 V3 uses the official solid and breathe effects; NuNuBar renders blink with 500 ms acknowledged wired frames.")
+                    ? "\(officialAirV3ModelName) 使用该型号自己的官方常亮和呼吸模式；闪烁由 NuNuBar 在有线连接下以 500ms 开关帧实现。"
+                    : "\(officialAirV3ModelName) uses its model-specific official solid and breathe modes; NuNuBar renders blink with 500 ms acknowledged wired frames.")
             }
         }
     }
@@ -83,8 +83,14 @@ struct LightSettingsView: View {
     private func lightRow(_ role: AgentLightColorRole, time: TimeInterval) -> some View {
         let color = model.lightPalette.color(for: role)
         let effect = model.lightPalette.effect(for: role)
+        let brightness = model.lightPalette.brightness(for: role)
         return HStack(spacing: 9) {
-            pairedPreview(effect: effect, color: color, time: time)
+            pairedPreview(
+                effect: effect,
+                color: color,
+                brightness: brightness,
+                time: time
+            )
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title(for: role))
@@ -114,7 +120,7 @@ struct LightSettingsView: View {
             .labelsHidden()
             .pickerStyle(.menu)
             .controlSize(.small)
-            .frame(width: 76)
+            .frame(width: 66)
 
             ColorPicker(
                 title(for: role),
@@ -123,6 +129,26 @@ struct LightSettingsView: View {
             )
             .labelsHidden()
             .frame(width: 30)
+
+            Image(systemName: "sun.max")
+                .font(.system(size: 10))
+                .foregroundStyle(NuphyBarTheme.secondaryText)
+                .accessibilityHidden(true)
+
+            Slider(
+                value: brightnessBinding(for: role),
+                in: 0...Double(AgentLightPalette.maximumBrightness),
+                step: 1
+            )
+            .controlSize(.mini)
+            .frame(width: 46)
+            .accessibilityLabel(language.text(.brightness))
+            .help("\(language.text(.brightness)): \(brightness)%")
+
+            Text("\(brightness)%")
+                .font(.system(size: SettingsLayout.secondaryTextSize, design: .monospaced))
+                .foregroundStyle(NuphyBarTheme.secondaryText)
+                .frame(width: 32, alignment: .trailing)
         }
         .frame(height: 50)
     }
@@ -130,6 +156,7 @@ struct LightSettingsView: View {
     private func pairedPreview(
         effect: AgentLightEffect,
         color: AgentLightRGBColor,
+        brightness: UInt8,
         time: TimeInterval
     ) -> some View {
         HStack(spacing: 4) {
@@ -137,12 +164,14 @@ struct LightSettingsView: View {
                 effect: effect,
                 time: time,
                 baseColor: color,
+                brightnessPercent: brightness,
                 size: CGSize(width: 7, height: 30)
             )
             LightStripPreview(
                 effect: effect,
                 time: time,
                 baseColor: color,
+                brightnessPercent: brightness,
                 size: CGSize(width: 7, height: 30)
             )
         }
@@ -213,6 +242,13 @@ struct LightSettingsView: View {
         )
     }
 
+    private func brightnessBinding(for role: AgentLightColorRole) -> Binding<Double> {
+        Binding(
+            get: { Double(model.lightPalette.brightness(for: role)) },
+            set: { model.updateLightBrightness(UInt8($0.rounded()), for: role) }
+        )
+    }
+
     private func title(for role: AgentLightColorRole) -> String {
         switch role {
         case .working: language.text(.working)
@@ -230,8 +266,13 @@ struct LightSettingsView: View {
         }
     }
 
-    private var isAir65V3Connected: Bool {
-        model.keyboardModel?.caseInsensitiveCompare("Air65 V3") == .orderedSame
+    private var officialAirV3ModelName: String? {
+        guard model.keyboardTransport == .usb,
+              let keyboardModel = model.keyboardModel,
+              SupportedOfficialNuPhyKeyboard.models.contains(where: {
+                  keyboardModel.caseInsensitiveCompare($0.productName) == .orderedSame
+              }) else { return nil }
+        return keyboardModel
     }
 }
 

@@ -1,11 +1,11 @@
 # Start here / 从这里开始
 
-NuNuBar currently has two hardware-verified normal-user paths: Air65 V3 and
-Air96 V2 ANSI on Apple Silicon macOS. Download the repository, open its folder
+NuNuBar currently has three hardware-verified normal-user paths: Air65 V3,
+Air75 V3, and Air96 V2 ANSI on Apple Silicon macOS. Download the repository, open its folder
 in Codex, and send the prompt below. Codex will return one explicit setup plan.
 
-NuNuBar 当前只有两条实机验证的普通用户路线：Apple Silicon macOS 上的
-Air65 V3 和 Air96 V2 ANSI。下载仓库、在 Codex 中打开文件夹并发送下面的提示词，
+NuNuBar 当前有三条实机验证的普通用户路线：Apple Silicon macOS 上的
+Air65 V3、Air75 V3 和 Air96 V2 ANSI。下载仓库、在 Codex 中打开文件夹并发送下面的提示词，
 Codex 会直接返回一条明确配置计划。
 
 ## Prompt for Codex / 交给 Codex 的提示词
@@ -16,19 +16,26 @@ Codex 会直接返回一条明确配置计划。
 先阅读 AGENTS.md 和 START_HERE.md，再运行
 python3 script/preflight.py --json。先向我汇报 setupPlan.path、required、
 conditionalFirmwareRequirements、approvalGates 和 nextAction，不要立即修改电脑。
-结合只读报告和我的实体确认，只能选择下面两条成功路线之一：
-air65-v3-macos-wired 或 air96-v2-ansi-macos-v7。无法准确匹配时停止。
+结合只读报告和我的实体确认，只能选择下面三条成功路线之一：
+air65-v3-macos-wired、air75-v3-macos-wired-1.0.14.6 或
+air96-v2-ansi-macos-v7。无法准确匹配时停止。
 
 匹配 Air65 V3 后读取 docs/AIR65_V3_VERIFICATION.md；我要设置快捷键时再读取
 docs/AIR65_V3_KEY_MAPPING.zh-CN.md。匹配 Air96 V2 ANSI 后读取
-docs/AIR96_V2_SUCCESS.zh-CN.md。不要读取历史实验指南来决定普通用户路线。
+docs/AIR96_V2_SUCCESS.zh-CN.md。匹配 Air75 V3 后读取
+docs/AIR75_V3_VERIFICATION.zh-CN.md；我要设置快捷键时再读取
+docs/AIR75_V3_KEY_MAPPING.zh-CN.md，并检查官方固件是否不低于 1.0.14.6。
+如果我要待机灯始终常亮，确认 NuNuBar 待机颜色不是黑色、灯效为常亮，并引导我
+短按 Fn + ] 关闭 Air75 V3 官方自动休眠；不要用高频 HID 轮询代替官方设置。
+不要读取历史实验指南来决定普通用户路线。
 
 安装或替换 App、写入 Codex Hooks、进入 DFU、刷写固件必须分开说明并分别获得
 我的确认。写入 Hooks 前说明 ~/.codex/hooks.json 和 ~/.codex/config.toml 的
 改动；写入后告诉我如何在 Codex 设置中审核四个 NuNuBar Hooks，并回到 App
 重新检测。保留其他 Hooks 和配置，不得自动批准 Codex Hook 信任。Air65 V3
-绝不刷固件；Air96 V2 必须先自检，能用就绝不重刷。最后运行 App 内灯光自检，并用真实
-Codex 状态和 USB 拔插完成验收。如果我要配置 Air65 V3 按键或旋钮快捷键，
+绝不刷固件；Air75 V3 只在低于 1.0.14.6 时经单独确认使用 NuPhyIO 官方升级，
+绝不刷 V2 镜像；Air96 V2 必须先自检，能用就绝不重刷。最后运行 App 内灯光自检，并用真实
+Codex 状态和 USB 拔插完成验收。如果我要配置 Air65/Air75 V3 按键或旋钮快捷键，
 必须先说明该功能当前依赖官方 Karabiner-Elements；安装组件和写入
 ~/.config/karabiner/karabiner.json 都要分别取得我的确认。缺少实体观察时必须
 如实标记为待验证。
@@ -47,20 +54,21 @@ software, edit Hooks, request permissions, enter DFU, or flash firmware.
 | Exact keyboard / 准确键盘 | Required path / 所需路线 | Verified result / 成功结果 |
 | --- | --- | --- |
 | Air65 V3 `19F5:102B` | Apple Silicon macOS, wired USB, NuNuBar, approved Codex Hooks; optional shortcuts additionally require Karabiner and NuPhyIO `F21/F22/F23` / Apple Silicon macOS、有线 USB、NuNuBar、已批准 Hooks；可选快捷键另需 Karabiner 与 NuPhyIO `F21/F22/F23` | Official firmware, no flash; Codex lights and right-knob task switching verified / 官方固件免刷，状态灯和右旋任务切换已验证 |
+| Air75 V3 `19F5:1028` | Apple Silicon macOS, wired USB, NuNuBar, official firmware `1.0.14.6` or later, approved Codex Hooks; optional shortcuts additionally require Karabiner and NuPhyIO `F21/F22/F23` / Apple Silicon macOS、有线 USB、NuNuBar、官方 `1.0.14.6` 或更高、已批准 Hooks；可选快捷键另需 Karabiner 与 NuPhyIO `F21/F22/F23` | Official NuPhyIO update only when below the minimum; side-light protocol and status states verified; key editor available, knob acceptance pending physical test / 仅低于最低版本时进行 NuPhyIO 官方升级；侧灯协议和状态灯已验证；键位编辑器可用，旋钮待实机验收 |
 | Air96 V2 ANSI `19F5:3266` | Apple Silicon macOS, wired USB, NuNuBar, self-test first; only a failed self-test opens the backed-up v7 firmware flow / Apple Silicon macOS、有线 USB、NuNuBar、先自检；仅自检失败才进入有备份的 v7 固件流程 | v7 firmware, both side lights, custom states/effects, reconnect and real Codex transitions verified / v7 固件、双侧灯、自定义状态/灯效、重连和真实 Codex 切换已验证 |
 
 Any other keyboard, Windows host, Intel Mac, Bluetooth-only connection, or
-unknown physical layout is not one of these two normal-user success paths.
+unknown physical layout is not one of these three normal-user success paths.
 Codex must stop rather than substitute a similar model or testing artifact.
 
-Air65 V3 status lighting does not require Karabiner. Its current macOS key and
-knob mapping feature does require official Karabiner-Elements. NuNuBar may guide
+Air65/Air75 V3 status lighting does not require Karabiner. Their current macOS
+key and knob mapping features require official Karabiner-Elements. NuNuBar may guide
 installation and merge exact-device rules only after explicit confirmation.
 
-其他键盘、Windows、Intel Mac、仅蓝牙连接或无法确认实体配列，都不属于这两条
+其他键盘、Windows、Intel Mac、仅蓝牙连接或无法确认实体配列，都不属于这三条
 普通用户成功路线。Codex 必须停止，不能拿相似型号或测试资产替代。
 
-Air65 V3 状态灯不依赖 Karabiner；当前 macOS 按键和旋钮映射功能依赖官方
+Air65/Air75 V3 状态灯不依赖 Karabiner；当前 macOS 按键和旋钮映射功能依赖官方
 Karabiner-Elements。NuNuBar 可以提供安装引导并合并准确设备规则，但必须先获得
 明确确认。
 
@@ -78,7 +86,7 @@ change leads to USB troubleshooting before the model-locked firmware flow.
 - Codex Hooks update only a local coarse state file; they do not read prompts or replies.
 - The App owns keyboard communication and restores the current state after reconnect.
 - Working, waiting, complete, and idle colors/effects can be adjusted in the App.
-- On Air65 V3, optional key and knob mappings work through official
+- On Air65/Air75 V3, optional key and knob mappings work through official
   Karabiner-Elements; lighting remains independent from it.
 - Air96 V2 firmware is written only when its existing-firmware self-test fails;
   normal daily use never repeats the flash.
@@ -87,7 +95,8 @@ change leads to USB troubleshooting before the model-locked firmware flow.
 - Codex Hooks 只写入本地粗粒度状态，不读取提示词或回复；
 - App 统一负责键盘通信，重连后自动恢复当前状态；
 - 工作中、需要确认、完成、待机的颜色和灯效可在 App 中设置；
-- Air65 V3 的可选按键和旋钮映射由官方 Karabiner-Elements 执行，灯光不依赖它；
+- Air75 V3 如需始终亮灯，使用官方 `Fn + ]` 关闭自动休眠；
+- Air65/Air75 V3 的可选按键和旋钮映射由官方 Karabiner-Elements 执行，灯光不依赖它；
 - Air96 V2 只有现有固件自检失败时才刷写；日常使用不重复刷写。
 
 ## Public download requirement / 公开下载要求

@@ -140,7 +140,7 @@ enum Air65FnShortcutError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .configurationMissing:
-            "Open Karabiner-Elements once before changing Air65 V3 mappings."
+            "Open Karabiner-Elements once before changing NuPhy keyboard mappings."
         case .invalidConfiguration:
             "Karabiner configuration has an unsupported structure and was not changed."
         case .profileMissing:
@@ -148,7 +148,7 @@ enum Air65FnShortcutError: LocalizedError, Equatable {
         case .backupAlreadyExists:
             "The proposed Karabiner backup already exists. Refresh and try again."
         case .unsupportedKey:
-            "This Air65 V3 control cannot be mapped as a standard keyboard event yet."
+            "This NuPhy control cannot be mapped as a standard keyboard event yet."
         }
     }
 }
@@ -160,19 +160,27 @@ struct Air65FnShortcutService: @unchecked Sendable {
     static let productID = 0x102B
     static let codexBundleIdentifierPattern = "^com\\.openai\\.codex$"
     static let karabinerDownloadURL = URL(string: "https://karabiner-elements.pqrs.org/")!
-    static let nuphyIOURL = URL(string: "https://drive.nuphy.io/#/pressKey")!
+
+    static func nuphyIOURL(languageCode: String) -> URL {
+        var components = URLComponents(string: "https://drive.nuphy.io/")!
+        components.queryItems = [URLQueryItem(name: "lang", value: languageCode)]
+        return components.url!
+    }
 
     let fileManager: FileManager
     let configURL: URL
     let karabinerAppURL: URL
     let eventViewerAppURL: URL
     let karabinerCLIURL: URL
+    let profile: NuPhyKeyboardMappingProfile
 
     init(
+        profile: NuPhyKeyboardMappingProfile = .air65V3,
         fileManager: FileManager = .default,
         homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
         applicationsDirectory: URL = URL(fileURLWithPath: "/Applications", isDirectory: true)
     ) {
+        self.profile = profile
         self.fileManager = fileManager
         configURL = homeDirectory
             .appending(path: ".config/karabiner/karabiner.json")
@@ -197,21 +205,21 @@ struct Air65FnShortcutService: @unchecked Sendable {
         guard karabinerEngineIsReady() else {
             return .karabinerSetupRequired
         }
-        return Self.containsManagedRule(in: data) ? .ready : .mappingMissing
+        return Self.containsManagedRule(in: data, profile: profile) ? .ready : .mappingMissing
     }
 
     func configuredMappings() throws -> [Air65KeyMapping] {
         guard fileManager.fileExists(atPath: configURL.path) else {
             throw Air65FnShortcutError.configurationMissing
         }
-        return try Self.mappings(in: Data(contentsOf: configURL))
+        return try Self.mappings(in: Data(contentsOf: configURL), profile: profile)
     }
 
     func proposedBackupURL(now: Date = Date()) -> URL {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyyMMdd-HHmmss"
-        let stem = "karabiner.json.nunubar-before-air65-mapping-\(formatter.string(from: now))"
+        let stem = "karabiner.json.nunubar-before-\(profile.backupName)-mapping-\(formatter.string(from: now))"
         let directory = configURL.deletingLastPathComponent()
 
         var candidate = directory.appending(path: "\(stem).bak")
@@ -224,11 +232,11 @@ struct Air65FnShortcutService: @unchecked Sendable {
     }
 
     func installMapping(_ mapping: Air65KeyMapping, backupURL: URL) throws {
-        guard Air65KeyboardLayout.key(id: mapping.keyID)?.inputKeyCode != nil else {
+        guard profile.key(id: mapping.keyID)?.inputKeyCode != nil else {
             throw Air65FnShortcutError.unsupportedKey
         }
         try updateConfiguration(backupURL: backupURL) { original in
-            try Self.configurationByUpsertingMapping(mapping, in: original)
+            try Self.configurationByUpsertingMapping(mapping, in: original, profile: profile)
         }
     }
 
@@ -238,7 +246,7 @@ struct Air65FnShortcutService: @unchecked Sendable {
 
     func removeMapping(for keyID: String, backupURL: URL) throws {
         try updateConfiguration(backupURL: backupURL) { original in
-            try Self.configurationByRemovingMapping(for: keyID, in: original)
+            try Self.configurationByRemovingMapping(for: keyID, in: original, profile: profile)
         }
     }
 
@@ -279,12 +287,18 @@ struct Air65FnShortcutService: @unchecked Sendable {
         NSWorkspace.shared.open(eventViewerAppURL)
     }
 
-    static func containsManagedRule(in data: Data) -> Bool {
-        guard let mappings = try? mappings(in: data) else { return false }
+    static func containsManagedRule(
+        in data: Data,
+        profile: NuPhyKeyboardMappingProfile = .air65V3
+    ) -> Bool {
+        guard let mappings = try? mappings(in: data, profile: profile) else { return false }
         return !mappings.isEmpty
     }
 
-    static func mappings(in data: Data) throws -> [Air65KeyMapping] {
+    static func mappings(
+        in data: Data,
+        profile: NuPhyKeyboardMappingProfile = .air65V3
+    ) throws -> [Air65KeyMapping] {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let profiles = root["profiles"] as? [[String: Any]]
         else {
@@ -295,9 +309,9 @@ struct Air65FnShortcutService: @unchecked Sendable {
         }
 
         let selectedIndex = profiles.firstIndex { ($0["selected"] as? Bool) == true } ?? 0
-        let profile = profiles[selectedIndex]
-        guard let complex = profile["complex_modifications"] as? [String: Any] else {
-            if profile["complex_modifications"] != nil {
+        let selectedProfile = profiles[selectedIndex]
+        guard let complex = selectedProfile["complex_modifications"] as? [String: Any] else {
+            if selectedProfile["complex_modifications"] != nil {
                 throw Air65FnShortcutError.invalidConfiguration
             }
             return []
@@ -311,7 +325,7 @@ struct Air65FnShortcutService: @unchecked Sendable {
 
         var byKey: [String: Air65KeyMapping] = [:]
         for rule in rules {
-            if let mapping = mapping(from: rule) {
+            if let mapping = mapping(from: rule, profile: profile) {
                 byKey[mapping.keyID] = mapping
             }
         }
@@ -324,9 +338,10 @@ struct Air65FnShortcutService: @unchecked Sendable {
 
     static func configurationByUpsertingMapping(
         _ mapping: Air65KeyMapping,
-        in data: Data
+        in data: Data,
+        profile: NuPhyKeyboardMappingProfile = .air65V3
     ) throws -> Data {
-        guard Air65KeyboardLayout.key(id: mapping.keyID)?.inputKeyCode != nil else {
+        guard profile.key(id: mapping.keyID)?.inputKeyCode != nil else {
             throw Air65FnShortcutError.unsupportedKey
         }
         guard var root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -339,21 +354,21 @@ struct Air65FnShortcutService: @unchecked Sendable {
         }
 
         let selectedIndex = profiles.firstIndex { ($0["selected"] as? Bool) == true } ?? 0
-        var profile = profiles[selectedIndex]
-        if let value = profile["complex_modifications"], !(value is [String: Any]) {
+        var selectedProfile = profiles[selectedIndex]
+        if let value = selectedProfile["complex_modifications"], !(value is [String: Any]) {
             throw Air65FnShortcutError.invalidConfiguration
         }
-        var complex = profile["complex_modifications"] as? [String: Any] ?? [:]
+        var complex = selectedProfile["complex_modifications"] as? [String: Any] ?? [:]
         if let value = complex["rules"], !(value is [[String: Any]]) {
             throw Air65FnShortcutError.invalidConfiguration
         }
 
         var rules = complex["rules"] as? [[String: Any]] ?? []
-        rules.removeAll { ownedKeyID(from: $0) == mapping.keyID }
-        rules.append(managedRule(for: mapping))
+        rules.removeAll { ownedKeyID(from: $0, profile: profile) == mapping.keyID }
+        rules.append(managedRule(for: mapping, profile: profile))
         complex["rules"] = rules
-        profile["complex_modifications"] = complex
-        profiles[selectedIndex] = profile
+        selectedProfile["complex_modifications"] = complex
+        profiles[selectedIndex] = selectedProfile
         root["profiles"] = profiles
 
         return try serializedConfiguration(root)
@@ -368,7 +383,8 @@ struct Air65FnShortcutService: @unchecked Sendable {
 
     static func configurationByRemovingMapping(
         for keyID: String,
-        in data: Data
+        in data: Data,
+        profile: NuPhyKeyboardMappingProfile = .air65V3
     ) throws -> Data {
         guard var root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               var profiles = root["profiles"] as? [[String: Any]]
@@ -380,9 +396,9 @@ struct Air65FnShortcutService: @unchecked Sendable {
         }
 
         for index in profiles.indices {
-            var profile = profiles[index]
-            guard var complex = profile["complex_modifications"] as? [String: Any] else {
-                if profile["complex_modifications"] != nil {
+            var selectedProfile = profiles[index]
+            guard var complex = selectedProfile["complex_modifications"] as? [String: Any] else {
+                if selectedProfile["complex_modifications"] != nil {
                     throw Air65FnShortcutError.invalidConfiguration
                 }
                 continue
@@ -393,10 +409,10 @@ struct Air65FnShortcutService: @unchecked Sendable {
                 }
                 continue
             }
-            rules.removeAll { ownedKeyID(from: $0) == keyID }
+            rules.removeAll { ownedKeyID(from: $0, profile: profile) == keyID }
             complex["rules"] = rules
-            profile["complex_modifications"] = complex
-            profiles[index] = profile
+            selectedProfile["complex_modifications"] = complex
+            profiles[index] = selectedProfile
         }
         root["profiles"] = profiles
 
@@ -428,7 +444,7 @@ struct Air65FnShortcutService: @unchecked Sendable {
                 return false
             }
             return identifiers["vendor_id"] as? Int == Self.vendorID
-                && identifiers["product_id"] as? Int == Self.productID
+                && identifiers["product_id"] as? Int == profile.productID
                 && identifiers["is_keyboard"] as? Bool == true
         }
         let virtualKeyboard = devices.contains { device in
@@ -441,8 +457,11 @@ struct Air65FnShortcutService: @unchecked Sendable {
         return physicalKeyboard && virtualKeyboard
     }
 
-    private static func mapping(from rule: [String: Any]) -> Air65KeyMapping? {
-        guard let keyID = ownedKeyID(from: rule),
+    private static func mapping(
+        from rule: [String: Any],
+        profile: NuPhyKeyboardMappingProfile
+    ) -> Air65KeyMapping? {
+        guard let keyID = ownedKeyID(from: rule, profile: profile),
               let manipulators = rule["manipulators"] as? [[String: Any]],
               manipulators.count == 1,
               let manipulator = manipulators.first,
@@ -453,7 +472,7 @@ struct Air65FnShortcutService: @unchecked Sendable {
               to.count == 1,
               let output = to.first,
               let action = Air65MappingAction.parse(output),
-              hasExactDeviceCondition(manipulator),
+              hasExactDeviceCondition(manipulator, profile: profile),
               !action.isCodexAction || hasCodexFrontmostCondition(manipulator)
         else { return nil }
 
@@ -464,17 +483,23 @@ struct Air65FnShortcutService: @unchecked Sendable {
         )
     }
 
-    private static func ownedKeyID(from rule: [String: Any]) -> String? {
+    private static func ownedKeyID(
+        from rule: [String: Any],
+        profile: NuPhyKeyboardMappingProfile
+    ) -> String? {
         guard let description = rule["description"] as? String else { return nil }
-        if description == managedRuleDescription {
+        if description == profile.legacyRuleDescription {
             return Air65KeyboardLayout.yellowShortcutKeyID
         }
-        guard description.hasPrefix(managedRulePrefix) else { return nil }
-        let keyID = String(description.dropFirst(managedRulePrefix.count))
+        guard description.hasPrefix(profile.managedRulePrefix) else { return nil }
+        let keyID = String(description.dropFirst(profile.managedRulePrefix.count))
         return keyID.isEmpty ? nil : keyID
     }
 
-    private static func hasExactDeviceCondition(_ manipulator: [String: Any]) -> Bool {
+    private static func hasExactDeviceCondition(
+        _ manipulator: [String: Any],
+        profile: NuPhyKeyboardMappingProfile
+    ) -> Bool {
         guard let conditions = manipulator["conditions"] as? [[String: Any]] else {
             return false
         }
@@ -484,7 +509,7 @@ struct Air65FnShortcutService: @unchecked Sendable {
             else { return false }
             return identifiers.contains { identifier in
                 identifier["vendor_id"] as? Int == vendorID
-                    && identifier["product_id"] as? Int == productID
+                    && identifier["product_id"] as? Int == profile.productID
                     && identifier["is_keyboard"] as? Bool == true
             }
         }
@@ -502,13 +527,16 @@ struct Air65FnShortcutService: @unchecked Sendable {
         }
     }
 
-    private static func managedRule(for mapping: Air65KeyMapping) -> [String: Any] {
+    private static func managedRule(
+        for mapping: Air65KeyMapping,
+        profile: NuPhyKeyboardMappingProfile
+    ) -> [String: Any] {
         var conditions: [[String: Any]] = [
             [
                 "identifiers": [
                     [
                         "is_keyboard": true,
-                        "product_id": productID,
+                        "product_id": profile.productID,
                         "vendor_id": vendorID,
                     ],
                 ],
@@ -523,7 +551,7 @@ struct Air65FnShortcutService: @unchecked Sendable {
         }
 
         return [
-            "description": "\(managedRulePrefix)\(mapping.keyID)",
+            "description": "\(profile.managedRulePrefix)\(mapping.keyID)",
             "manipulators": [
                 [
                     "conditions": conditions,

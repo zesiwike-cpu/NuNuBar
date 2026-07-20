@@ -2,6 +2,51 @@
 
 ## Unreleased
 
+## 0.15.0 - 2026-07-19
+
+- Added independent 0-100% brightness controls for working, waiting, complete,
+  and idle. Air75 V3 uses its official 0-100 hardware range, Air65 V3 maps to
+  its 0-24 range, and existing V2 firmware keeps its protocol while receiving
+  brightness-adjusted RGB values.
+- Migrated existing color/effect files with deterministic 100% brightness and
+  added debounced three-second hardware previews for brightness changes.
+- Physically verified Air75 V3 at 20%: the App value, HID delivery log, visible
+  side-light level, and keyboard `D5` readback byte `0x14` all agreed.
+- Debounced live color previews so dragging the macOS color picker sends only
+  the settled color to Air V3 keyboards instead of restarting the hardware
+  effect for every intermediate value.
+- Updated the key-mapping shortcut from the obsolete NuPhyIO `#/pressKey`
+  route to the current official NuPhyIO 2.0 entry, preserving the App language.
+
+- Added a clickable Air75 V3 75% ANSI key-mapping layout to the macOS App,
+  including its function row, navigation column, and three independent knob
+  directions.
+- Generalized the Karabiner mapping engine across Air65 V3 `19F5:102B` and
+  Air75 V3 `19F5:1028`, with model-specific rule ownership, backups, device
+  conditions, and connection readiness checks.
+- Kept Air65 V3 mappings intact when Air75 V3 rules are added or removed.
+  Codex actions remain active only while Codex is frontmost.
+- Air75 V3 knob mappings use the same explicit carrier pattern: `F21` left,
+  `F22` press, and `F23` right. The App's input probe verifies these carriers
+  before physical acceptance.
+- Documented the official Air75 V3 short `Fn + ]` Auto-sleep toggle for users
+  who require a non-black solid idle light to stay on continuously; no periodic
+  HID keepalive or synthetic key activity is used.
+
+## 0.14.1 - 2026-07-19
+
+- Added the hardware-calibrated Air75 V3 `19F5:1028` official wired path using
+  NuPhyIO's two acknowledged `D6` writes for side-light state and brightness.
+- Added in-app official firmware detection and a minimum Air75 V3 version of
+  `1.0.14.6`; lower versions stop setup and direct the user to a separately
+  approved NuPhyIO backup and official update.
+- Physically verified the installed Codex Hook path on Air75 V3: a real task
+  changed from orange working breathe to green complete solid.
+- Added Air75 V3 to the setup assistant, HID allowlist, read-only preflight,
+  release checks, and bilingual verification documentation.
+- Preserved the verified Air65 V3 lighting and Karabiner mapping route, Air96
+  V2 v7 route, and the existing Air60/Air75/Halo75 V2 contributor assets.
+
 ## 0.13.1 - 2026-07-19
 
 - NuNuBar 0.13.1 build 48 passed retail Air65 V3 acceptance on macOS 15.1:

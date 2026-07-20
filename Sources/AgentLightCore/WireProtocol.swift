@@ -50,7 +50,7 @@ public enum USBStatusReportEncoder {
         palette: AgentLightPalette = .default
     ) -> [UInt8] {
         var report = [UInt8](repeating: 0, count: reportSize)
-        let color = palette.color(for: command)
+        let color = palette.brightnessAdjustedColor(for: command)
         report.replaceSubrange(0..<magic.count, with: magic)
         report[4] = colorProtocolVersion
         report[5] = setStatusCommand
@@ -67,7 +67,7 @@ public enum USBStatusReportEncoder {
         palette: AgentLightPalette = .default
     ) -> [UInt8] {
         var report = [UInt8](repeating: 0, count: reportSize)
-        let color = palette.color(for: command)
+        let color = palette.brightnessAdjustedColor(for: command)
         report.replaceSubrange(0..<magic.count, with: magic)
         report[4] = effectProtocolVersion
         report[5] = setStatusCommand
